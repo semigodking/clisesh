@@ -1,0 +1,12 @@
+# Binaries
+/clisesh
+/bin/
+
+# Test binaries & coverage
+*.test
+*.out
+
+# OS & Editor files
+.DS_Store
+.idea/
+.vscode/

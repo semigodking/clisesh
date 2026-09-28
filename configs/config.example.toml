@@ -1,0 +1,77 @@
+# clisesh configuration
+# Location: $XDG_CONFIG_HOME/clisesh/config.toml (default ~/.config/clisesh/config.toml)
+# Precedence (highest wins): CLI flags > env (CLISESH_*) > this file > defaults.
+
+# Active session provider: "all" (aggregate every supported CLI), "kiro",
+# "antigravity", "claude", or "codex". Default is "all", which discovers and merges
+# sessions from every supported CLI installed on this machine.
+provider = "all"
+
+# Color theme: "default", "gray", "high-contrast", or "256".
+theme = "default"
+
+# Max description length used by the UI/summarizer.
+title_len = 80
+
+# Cache directory (default: $XDG_CACHE_HOME/clisesh or ~/.cache/clisesh).
+# cache_dir = "~/.cache/clisesh"
+
+[summarizer]
+# Active summarization backend: select any configured subprocess or LLM backend.
+# You can specify by "<type>.<name>" (e.g. "subprocess.agy", "llm.deepseek", "llm.glm")
+# or by full path "summarizer.subprocess.agy", or simply the unique name e.g. "agy".
+backend = "subprocess.kiro"
+model = "qwen3-coder-next"
+title_len = 80
+timeout_sec = 60
+
+  # Subprocess backends: configure one or more CLI tools.
+  # Tokens {prompt} and {model} are replaced at runtime.
+  [summarizer.subprocess.kiro]
+  command = "kiro-cli"
+  args = ["chat", "--no-interactive", "--model", "{model}", "--effort", "low", "--wrap", "never", "{prompt}"]
+
+  [summarizer.subprocess.agy]
+  command = "agy"
+  args = ["--print", "{prompt}"]
+
+  # HTTP / LLM backends: configure one or more APIs (OpenAI, DeepSeek, GLM, Ollama, etc.).
+  # format: "openai" (default, single user message) or "system_user" (splits system instructions and session items).
+  [summarizer.llm.openai]
+  base_url = "https://api.openai.com/v1"
+  api_key = "${OPENAI_API_KEY}"
+  model = "gpt-4o-mini"
+  temperature = 0.2
+  timeout_sec = 60
+  format = "openai"
+
+  [summarizer.llm.deepseek]
+  base_url = "https://api.deepseek.com/v1"
+  api_key = "${DEEPSEEK_API_KEY}"
+  model = "deepseek-chat"
+  temperature = 0.2
+  timeout_sec = 60
+  format = "openai"
+
+  [summarizer.llm.glm]
+  base_url = "https://open.bigmodel.cn/api/paas/v4"
+  api_key = "${GLM_API_KEY}"
+  model = "glm-4-flash"
+  temperature = 0.2
+  timeout_sec = 60
+  format = "system_user"
+
+# Optional per-role color overrides (see docs/specs/003-theme.md).
+# You can also customize individual CLI provider badge colors using `provider_<name>_fg`:
+# [theme_overrides]
+# status_fg = "250"
+# status_bg = "237"
+# provider_kiro_fg = "magenta"
+# provider_antigravity_fg = "brightblue"
+# provider_claude_fg = "brightred"
+# provider_codex_fg = "green"
+# provider_deepseek_fg = "blue"
+# provider_glm_fg = "brightcyan"
+# provider_cursor_fg = "cyan"
+# provider_aider_fg = "brightyellow"
+# provider_opencode_fg = "brightmagenta"
