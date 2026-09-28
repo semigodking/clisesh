@@ -23,7 +23,9 @@ title_len = 80
 backend = "subprocess.kiro"
 model = "qwen3-coder-next"
 title_len = 80
-timeout_sec = 60
+# Max API requests per minute (RPM). 0 = unlimited. When set, requests are
+# strictly throttled within a rolling 60-second window.
+# rpm = 30
 
   # Subprocess backends: configure one or more CLI tools.
   # Tokens {prompt} and {model} are replaced at runtime.
@@ -37,6 +39,7 @@ timeout_sec = 60
 
   # HTTP / LLM backends: configure one or more APIs (OpenAI, DeepSeek, GLM, Ollama, etc.).
   # format: "openai" (default, single user message) or "system_user" (splits system instructions and session items).
+  # rpm: optional per-backend requests-per-minute limit (overrides summarizer.rpm).
   [summarizer.llm.openai]
   base_url = "https://api.openai.com/v1"
   api_key = "${OPENAI_API_KEY}"
@@ -44,6 +47,7 @@ timeout_sec = 60
   temperature = 0.2
   timeout_sec = 60
   format = "openai"
+  # rpm = 60
 
   [summarizer.llm.deepseek]
   base_url = "https://api.deepseek.com/v1"
@@ -52,6 +56,7 @@ timeout_sec = 60
   temperature = 0.2
   timeout_sec = 60
   format = "openai"
+  # rpm = 30
 
   [summarizer.llm.glm]
   base_url = "https://open.bigmodel.cn/api/paas/v4"
@@ -60,6 +65,7 @@ timeout_sec = 60
   temperature = 0.2
   timeout_sec = 60
   format = "system_user"
+  # rpm = 30
 
 # Optional per-role color overrides (see docs/specs/003-theme.md).
 # You can also customize individual CLI provider badge colors using `provider_<name>_fg`:

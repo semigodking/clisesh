@@ -35,16 +35,18 @@ type Backend struct {
 	BatchSize   int
 	MaxChars    int
 	TitleLen    int
+	RPM         int
+	Limiter     *Limiter
 	Client      *http.Client
 }
 
 // New returns a configured HTTP LLM backend with defaults.
 func New(baseURL, apiKey, model string, temperature float64, format string, headers map[string]string, titleLen int, timeout time.Duration) *Backend {
-	return NewWithOptions(baseURL, apiKey, model, temperature, format, headers, titleLen, timeout, summarize.DefaultBatchSize, 1500)
+	return NewWithOptions(baseURL, apiKey, model, temperature, format, headers, titleLen, timeout, summarize.DefaultBatchSize, 1500, 0)
 }
 
-// NewWithOptions returns a configured HTTP LLM backend with custom batch size and max chars.
-func NewWithOptions(baseURL, apiKey, model string, temperature float64, format string, headers map[string]string, titleLen int, timeout time.Duration, batchSize, maxChars int) *Backend {
+// NewWithOptions returns a configured HTTP LLM backend with custom batch size, max chars, and rpm.
+func NewWithOptions(baseURL, apiKey, model string, temperature float64, format string, headers map[string]string, titleLen int, timeout time.Duration, batchSize, maxChars, rpm int) *Backend {
 	if format == "" {
 		format = FormatOpenAI
 	}
@@ -53,6 +55,10 @@ func NewWithOptions(baseURL, apiKey, model string, temperature float64, format s
 	}
 	if maxChars <= 0 {
 		maxChars = 1500
+	}
+	var lim *Limiter
+	if rpm > 0 {
+		lim = NewLimiter(rpm)
 	}
 	return &Backend{
 		BaseURL:     strings.TrimRight(baseURL, "/"),
@@ -65,8 +71,35 @@ func NewWithOptions(baseURL, apiKey, model string, temperature float64, format s
 		BatchSize:   batchSize,
 		MaxChars:    maxChars,
 		TitleLen:    titleLen,
+		RPM:         rpm,
+		Limiter:     lim,
 		Client:      &http.Client{},
 	}
+}
+
+// SetRPM configures or updates the requests per minute rate limiter.
+func (b *Backend) SetRPM(rpm int) {
+	b.RPM = rpm
+	if rpm > 0 {
+		b.Limiter = NewLimiter(rpm)
+	} else {
+		b.Limiter = nil
+	}
+}
+
+// SetLimiter sets a custom rate limiter on the backend (e.g. for testing).
+func (b *Backend) SetLimiter(lim *Limiter) {
+	b.Limiter = lim
+	if lim != nil {
+		b.RPM = lim.RPM()
+	} else {
+		b.RPM = 0
+	}
+}
+
+// GetRPM returns the configured requests per minute.
+func (b *Backend) GetRPM() int {
+	return b.RPM
 }
 
 // Summarize implements summarize.Summarizer.
@@ -113,6 +146,12 @@ func (b *Backend) buildMessages(prompt string) []chatMessage {
 }
 
 func (b *Backend) chat(ctx context.Context, prompt string) (string, error) {
+	if b.Limiter != nil {
+		if err := b.Limiter.Wait(ctx); err != nil {
+			return "", err
+		}
+	}
+
 	timeout := b.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second

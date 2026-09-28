@@ -58,7 +58,17 @@ func buildSummarizer(cfg config.Config) (summarize.Summarizer, error) {
 		if model == "" {
 			model = s.Model
 		}
-		return llm.NewWithOptions(llmCfg.BaseURL, llmCfg.APIKey, model, llmCfg.Temperature, llmCfg.Format, llmCfg.Headers, titleLen, timeout, batchSize, maxChars), nil
+		rpm := llmCfg.RPM
+		if rpm <= 0 {
+			rpm = llmCfg.MaxRPM
+		}
+		if rpm <= 0 {
+			rpm = s.RPM
+		}
+		if rpm <= 0 {
+			rpm = s.MaxRPM
+		}
+		return llm.NewWithOptions(llmCfg.BaseURL, llmCfg.APIKey, model, llmCfg.Temperature, llmCfg.Format, llmCfg.Headers, titleLen, timeout, batchSize, maxChars, rpm), nil
 	default:
 		return nil, fmt.Errorf("unsupported summarizer backend kind %q", kind)
 	}
@@ -72,13 +82,20 @@ func runSummarize(args []string) {
 	providerName := fs.String("provider", "", "provider")
 	baseDir := fs.String("dir", "", "override provider base/session directory")
 	backend := fs.String("backend", "", "summarizer backend (e.g. subprocess.agy, llm.deepseek)")
+	rpm := fs.Int("rpm", 0, "max requests per minute for API summarizer")
 	_ = fs.Parse(args)
 	ids := fs.Args()
+
+	var rpmPtr *int
+	if *rpm > 0 {
+		rpmPtr = rpm
+	}
 
 	cfg, err := config.Load(config.Flags{
 		ConfigPath: *cfgPath,
 		Provider:   *providerName,
 		Backend:    *backend,
+		RPM:        rpmPtr,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)

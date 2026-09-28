@@ -25,12 +25,19 @@ func runTUI(args []string) {
 	providerName := fs.String("provider", "", "provider")
 	themeName := fs.String("theme", "", "theme")
 	baseDir := fs.String("dir", "", "override provider base/session directory")
+	rpm := fs.Int("rpm", 0, "max requests per minute for API summarizer")
 	_ = fs.Parse(args)
+
+	var rpmPtr *int
+	if *rpm > 0 {
+		rpmPtr = rpm
+	}
 
 	cfg, err := config.Load(config.Flags{
 		ConfigPath: *cfgPath,
 		Provider:   *providerName,
 		Theme:      *themeName,
+		RPM:        rpmPtr,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)

@@ -57,6 +57,10 @@ func main() {
 	case "help", "--help", "-h":
 		printHelp()
 	default:
+		if strings.HasPrefix(os.Args[1], "-") {
+			runTUI(os.Args[1:])
+			return
+		}
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		os.Exit(2)
 	}
@@ -200,6 +204,7 @@ Common flags:
   --theme <name>    color theme
   --dir <path>      override the provider's session directory
   --backend <name>  summarizer backend (e.g. subprocess.kiro, subprocess.agy, llm.deepseek)
+  --rpm <n>         max requests per minute for API summarizer (0 = unlimited)
 
 Configuration precedence: CLI flags > env (CLISESH_*) > config file > defaults.
 See docs/ for design and per-component specs.
@@ -221,6 +226,7 @@ func runConfig(args []string) {
 	theme := fs.String("theme", "", "override theme")
 	model := fs.String("model", "", "override summarizer model")
 	backend := fs.String("backend", "", "override summarizer backend")
+	rpm := fs.Int("rpm", 0, "override summarizer rpm")
 	force := fs.Bool("force", false, "overwrite existing config without prompting (config init)")
 	_ = fs.Parse(args)
 
@@ -234,12 +240,18 @@ func runConfig(args []string) {
 		return
 	}
 
+	var rpmPtr *int
+	if *rpm > 0 {
+		rpmPtr = rpm
+	}
+
 	cfg, err := config.Load(config.Flags{
 		ConfigPath: *cfgPath,
 		Provider:   *provider,
 		Theme:      *theme,
 		Model:      *model,
 		Backend:    *backend,
+		RPM:        rpmPtr,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)

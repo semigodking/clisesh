@@ -68,3 +68,42 @@ func TestBuildSummarizerTimeoutAndModelOverrides(t *testing.T) {
 		t.Fatal("expected non-nil summarizer")
 	}
 }
+
+func TestBuildSummarizerRPMResolution(t *testing.T) {
+	cfg := config.Default()
+	cfg.Summarizer.RPM = 30
+	cfg.Summarizer.LLM["global-rpm"] = config.LLMConfig{
+		BaseURL: "https://api.test.com",
+		APIKey:  "key",
+		Model:   "m",
+	}
+	cfg.Summarizer.LLM["custom-rpm"] = config.LLMConfig{
+		BaseURL: "https://api.test.com",
+		APIKey:  "key",
+		Model:   "m",
+		RPM:     60,
+	}
+
+	// 1. Inherit from global summarizer.rpm
+	cfg.Summarizer.Backend = "llm.global-rpm"
+	s1, err := buildSummarizer(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm1, ok := s1.(interface{ GetRPM() int })
+	if !ok || llm1.GetRPM() != 30 {
+		t.Errorf("expected s1 to have RPM 30, got %v", llm1)
+	}
+
+	// 2. Custom per-backend override
+	cfg.Summarizer.Backend = "llm.custom-rpm"
+	s2, err := buildSummarizer(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm2, ok := s2.(interface{ GetRPM() int })
+	if !ok || llm2.GetRPM() != 60 {
+		t.Errorf("expected s2 to have RPM 60, got %v", llm2)
+	}
+}
+

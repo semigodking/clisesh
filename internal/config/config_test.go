@@ -265,3 +265,59 @@ func TestResolveBackendErrors(t *testing.T) {
 		t.Error("expected error for nonexistent backend")
 	}
 }
+
+func TestConfigRPM(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	_ = os.WriteFile(path, []byte(`
+[summarizer]
+rpm = 30
+max_rpm = 30
+
+[summarizer.llm.openai]
+base_url = "https://api.openai.com/v1"
+api_key = "key"
+rpm = 45
+
+[summarizer.llm.deepseek]
+base_url = "https://api.deepseek.com/v1"
+api_key = "key"
+max_rpm = 60
+`), 0o644)
+
+	cfg, err := Load(Flags{ConfigPath: path})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Summarizer.RPM != 30 {
+		t.Errorf("expected summarizer.rpm = 30, got %d", cfg.Summarizer.RPM)
+	}
+	if cfg.Summarizer.LLM["openai"].RPM != 45 {
+		t.Errorf("expected openai.rpm = 45, got %d", cfg.Summarizer.LLM["openai"].RPM)
+	}
+	if cfg.Summarizer.LLM["deepseek"].MaxRPM != 60 {
+		t.Errorf("expected deepseek.max_rpm = 60, got %d", cfg.Summarizer.LLM["deepseek"].MaxRPM)
+	}
+
+	// Test ENV override
+	t.Setenv("CLISESH_SUMMARIZER_RPM", "120")
+	cfgEnv, err := Load(Flags{ConfigPath: path})
+	if err != nil {
+		t.Fatalf("Load with env: %v", err)
+	}
+	if cfgEnv.Summarizer.RPM != 120 {
+		t.Errorf("expected env override RPM = 120, got %d", cfgEnv.Summarizer.RPM)
+	}
+
+	// Test Flag override (flags beat env and file)
+	flagRPM := 200
+	cfgFlag, err := Load(Flags{ConfigPath: path, RPM: &flagRPM})
+	if err != nil {
+		t.Fatalf("Load with flag: %v", err)
+	}
+	if cfgFlag.Summarizer.RPM != 200 {
+		t.Errorf("expected flag override RPM = 200, got %d", cfgFlag.Summarizer.RPM)
+	}
+}
+

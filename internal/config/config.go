@@ -31,6 +31,8 @@ type LLMConfig struct {
 	TimeoutSec  int               `toml:"timeout_sec"`
 	Format      string            `toml:"format"`  // "openai" (default), "system_user"
 	Headers     map[string]string `toml:"headers"` // optional custom HTTP headers
+	RPM         int               `toml:"rpm"`     // max requests per minute (<= 0 inherits from summarizer.rpm)
+	MaxRPM      int               `toml:"max_rpm"` // alias for rpm
 }
 
 // SummarizerConfig selects and configures the summarization backends.
@@ -40,6 +42,8 @@ type SummarizerConfig struct {
 	TitleLen       int                         `toml:"title_len"`
 	TimeoutSec     int                         `toml:"timeout_sec"`
 	BatchSize      int                         `toml:"batch_size"`        // sessions per batch (default: 5)
+	RPM            int                         `toml:"rpm"`               // max requests per minute for API (default: 0 = unlimited)
+	MaxRPM         int                         `toml:"max_rpm"`           // alias for rpm
 	MaxPrompts     int                         `toml:"max_prompts"`       // max prompts extracted per session (default: 10)
 	HeadPrompts    int                         `toml:"head_prompts"`      // initial prompts to include (default: 2)
 	TailPrompts    int                         `toml:"tail_prompts"`      // latest prompts to include (default: 1)
@@ -70,6 +74,7 @@ type Flags struct {
 	TitleLen   *int
 	Model      string
 	Backend    string
+	RPM        *int
 }
 
 // Default returns the built-in default configuration.
@@ -227,6 +232,11 @@ func applyEnv(cfg *Config) {
 			cfg.Summarizer.TailPrompts = n
 		}
 	}
+	if v := os.Getenv("CLISESH_SUMMARIZER_RPM"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.Summarizer.RPM = n
+		}
+	}
 }
 
 func applyFlags(cfg *Config, f Flags) {
@@ -244,6 +254,9 @@ func applyFlags(cfg *Config, f Flags) {
 	}
 	if f.Backend != "" {
 		cfg.Summarizer.Backend = f.Backend
+	}
+	if f.RPM != nil && *f.RPM >= 0 {
+		cfg.Summarizer.RPM = *f.RPM
 	}
 }
 

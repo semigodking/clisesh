@@ -151,3 +151,70 @@ func TestTitleShortCircuitsNoHTTP(t *testing.T) {
 		t.Errorf("a = %q", got["a"])
 	}
 }
+
+func TestSummarizeObservesRPMLimiter(t *testing.T) {
+	reqCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount++
+		resp := chatResponse{
+			Choices: []struct {
+				Message chatMessage `json:"message"`
+			}{
+				{Message: chatMessage{Role: "assistant", Content: "1: summary"}},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	b := NewWithOptions(srv.URL, "key", "m", 0.2, "openai", nil, 80, time.Second, 1, 1500, 2)
+	if b.Limiter == nil || b.RPM != 2 {
+		t.Fatalf("expected Limiter to be initialized with RPM 2")
+	}
+
+	baseTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	currentTime := baseTime
+	b.Limiter.now = func() time.Time {
+		return currentTime
+	}
+	sleepCalled := 0
+	b.Limiter.sleep = func(ctx context.Context, d time.Duration) error {
+		sleepCalled++
+		currentTime = currentTime.Add(d)
+		return nil
+	}
+
+	ctx := context.Background()
+	// Request 1: should not sleep
+	_, err := b.Summarize(ctx, []summarize.Item{{ID: "1", Prompts: []string{"p1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sleepCalled != 0 {
+		t.Errorf("expected 0 sleeps after req 1, got %d", sleepCalled)
+	}
+
+	// Request 2 at T+10s: should not sleep
+	currentTime = baseTime.Add(10 * time.Second)
+	_, err = b.Summarize(ctx, []summarize.Item{{ID: "2", Prompts: []string{"p2"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sleepCalled != 0 {
+		t.Errorf("expected 0 sleeps after req 2, got %d", sleepCalled)
+	}
+
+	// Request 3 at T+15s: RPM limit of 2 reached, should sleep until T+60s!
+	currentTime = baseTime.Add(15 * time.Second)
+	_, err = b.Summarize(ctx, []summarize.Item{{ID: "3", Prompts: []string{"p3"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sleepCalled != 1 {
+		t.Errorf("expected 1 sleep after req 3, got %d", sleepCalled)
+	}
+	if reqCount != 3 {
+		t.Errorf("expected 3 HTTP requests, got %d", reqCount)
+	}
+}
+
