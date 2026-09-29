@@ -292,6 +292,9 @@ func (m *Model) startSummarize(ids []string, actionVerb string) tea.Cmd {
 		return nil
 	}
 
+	m.lastErr = ""
+	m.errOffset = 0
+
 	if actionVerb == "" {
 		actionVerb = "summarizing"
 	}
@@ -534,9 +537,8 @@ func (m *Model) applyResummarize(msg summarizeChunkDoneMsg) tea.Cmd {
 		m.summState.success = 0
 		return nil
 	} else if aliveCount > 0 {
-		if m.lastErr == "" {
-			m.errOffset = 0
-		}
+		m.lastErr = ""
+		m.errOffset = 0
 		for i := range m.sessions {
 			id := m.sessions[i].ID
 			if d, ok := msg.descs[id]; ok {
@@ -587,7 +589,7 @@ func (m *Model) applyResummarize(msg summarizeChunkDoneMsg) tea.Cmd {
 		finalSuccess := m.summState.success
 		m.summState.success = 0
 		m.summState.origDescs = map[string]string{}
-		if m.lastErr == "" && aliveCount > 0 {
+		if m.lastErr == "" && (finalSuccess > 0 || aliveCount > 0) {
 			m.status = fmt.Sprintf("summarized %d session(s)", finalSuccess)
 		}
 		return nextCmd

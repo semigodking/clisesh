@@ -307,6 +307,45 @@ func TestResummarizeUpdatesDescription(t *testing.T) {
 	if m.sessions[0].Description != "freshly generated summary" {
 		t.Errorf("description not updated after completion: %q", m.sessions[0].Description)
 	}
+	if m.status != "summarized 1 session(s)" {
+		t.Errorf("status = %q, want 'summarized 1 session(s)'", m.status)
+	}
+	if m.statusText() != "summarized 1 session(s)" {
+		t.Errorf("statusText() = %q, want 'summarized 1 session(s)'", m.statusText())
+	}
+}
+
+func TestResummarizeWithPriorError(t *testing.T) {
+	fp := &fakeProvider{caps: allCaps()}
+	th, _ := theme.Load("default", nil)
+	fs := &fakeSummarizer{desc: "resummarized after error"}
+	m := New(fp, fs, nil, th, testSessions(), nil, nil, nil, nil)
+	m.width, m.height = 80, 20
+
+	// Simulate a previous error (e.g., from failed resume)
+	m.lastErr = "previous error"
+	m.status = "resume failed: previous error"
+
+	// Press 'r': should clear prior error and trigger re-summarize
+	mm, cmd := m.Update(key("r"))
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("re-summarize should return a command")
+	}
+	if m.lastErr != "" {
+		t.Errorf("lastErr should be cleared on startSummarize, got %q", m.lastErr)
+	}
+
+	msg := cmd()
+	mm, _ = m.Update(msg)
+	m = mm.(Model)
+
+	if m.status != "summarized 1 session(s)" {
+		t.Errorf("status = %q, want 'summarized 1 session(s)'", m.status)
+	}
+	if m.statusText() != "summarized 1 session(s)" {
+		t.Errorf("statusText() = %q, want 'summarized 1 session(s)'", m.statusText())
+	}
 }
 
 func TestInfoMode(t *testing.T) {
@@ -869,6 +908,15 @@ func TestResumeValidationFailureModal(t *testing.T) {
 	}
 	if len(m.filtered()) != len(testSessions()) {
 		t.Errorf("sessions corrupted after error modal: got %d", len(m.filtered()))
+	}
+
+	// Status line after closing error modal should have exactly one [E: view error] and no duplicate
+	statusLine := stripANSI(m.viewStatus(100))
+	if strings.Contains(statusLine, "[e: view details]") {
+		t.Errorf("statusLine contains duplicate '[e: view details]': %q", statusLine)
+	}
+	if !strings.Contains(statusLine, "[E: view error]") {
+		t.Errorf("statusLine should contain '[E: view error]', got %q", statusLine)
 	}
 }
 
@@ -1567,6 +1615,3 @@ func TestManualEditDescription(t *testing.T) {
 		t.Errorf("expected view to contain footer hint, got:\n%s", viewStr)
 	}
 }
-
-
-

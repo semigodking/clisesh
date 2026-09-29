@@ -174,54 +174,82 @@ func (m Model) viewStatus(w int) string {
 	if total > 0 {
 		pos = m.cursor + 1
 	}
-	right := fmt.Sprintf(" %d/%d ", pos, total)
+	rightText := fmt.Sprintf(" %d/%d ", pos, total)
 
 	isError := m.lastErr != "" && (strings.HasPrefix(m.status, "summarize failed:") || strings.HasPrefix(m.status, "resume failed:"))
 
-	var left string
+	statusBg := m.theme.BgColor(theme.Status)
+	statusStyle := m.theme.Style(theme.Status)
+	if isError {
+		warnStyle := m.theme.Style(theme.Warning)
+		warnBg := m.theme.BgColor(theme.Warning)
+		if warnBg != "" {
+			statusBg = warnBg
+			statusStyle = warnStyle
+		} else {
+			statusStyle = warnStyle
+			if statusBg != "" {
+				statusStyle = statusStyle.Background(lipgloss.Color(statusBg))
+			}
+		}
+	}
+
+	right := statusStyle.Render(rightText)
+	rightW := lipgloss.Width(right)
+
+	var renderedLeft string
 	st := m.statusText()
 	switch {
 	case st != "":
 		cleanStatus := textutil.SingleLine(st)
 		if isError {
-			statusBg := m.theme.BgColor(theme.Warning)
-			hint := " [" + m.formatKeyBadge("E", statusBg) + ": view error]"
-			maxStatusLen := w - textutil.DisplayWidth(right) - textutil.DisplayWidth(hint) - 2
+			hintKey := m.formatKeyBadge("E", statusBg)
+			hintKeyW := lipgloss.Width(hintKey)
+			hintStaticW := textutil.DisplayWidth(" [: view error]")
+			hintTotalW := hintKeyW + hintStaticW
+
+			maxStatusLen := w - rightW - hintTotalW - 1
 			if maxStatusLen < 10 {
 				maxStatusLen = 10
 			}
-			left = " " + textutil.Truncate(cleanStatus, maxStatusLen) + hint
+			truncated := textutil.Truncate(cleanStatus, maxStatusLen)
+			renderedLeft = statusStyle.Render(" "+truncated+" [") + hintKey + statusStyle.Render(": view error]")
 		} else {
-			left = " " + cleanStatus
+			maxStatusLen := w - rightW - 1
+			if maxStatusLen < 10 {
+				maxStatusLen = 10
+			}
+			renderedLeft = statusStyle.Render(" " + textutil.Truncate(cleanStatus, maxStatusLen))
 		}
 	case m.mode == modeFilter:
-		left = " Filter: " + m.filter + "▌"
+		renderedLeft = statusStyle.Render(" Filter: " + m.filter + "▌")
 	case len(m.marked) > 0:
-		left = fmt.Sprintf(" %d marked", len(m.marked))
+		renderedLeft = statusStyle.Render(fmt.Sprintf(" %d marked", len(m.marked)))
 	default:
 		if s, ok := m.current(); ok {
 			badge := ProviderBadge(s.ProviderID)
-			left = fmt.Sprintf(" [%s] %s  %s", badge, s.ID, s.CWD)
+			maxStatusLen := w - rightW - 1
+			if maxStatusLen < 10 {
+				maxStatusLen = 10
+			}
+			plain := fmt.Sprintf(" [%s] %s  %s", badge, s.ID, s.CWD)
+			renderedLeft = statusStyle.Render(textutil.Truncate(plain, maxStatusLen))
 		} else {
-			left = fmt.Sprintf(" %d session(s)", total)
+			renderedLeft = statusStyle.Render(fmt.Sprintf(" %d session(s)", total))
 		}
 	}
-	// Compose full-width status line: left ... right.
-	gap := w - textutil.DisplayWidth(left) - textutil.DisplayWidth(right)
-	if gap < 0 {
-		left = textutil.Truncate(left, w-textutil.DisplayWidth(right))
-		gap = w - textutil.DisplayWidth(left) - textutil.DisplayWidth(right)
-	}
+
+	leftW := lipgloss.Width(renderedLeft)
+	gap := w - leftW - rightW
 	if gap < 0 {
 		gap = 0
 	}
-	line := left + strings.Repeat(" ", gap) + right
-
-	statusStyle := m.theme.Style(theme.Status)
-	if isError {
-		statusStyle = m.theme.Style(theme.Warning)
+	line := renderedLeft + statusStyle.Render(strings.Repeat(" ", gap)) + right
+	currentWidth := lipgloss.Width(line)
+	if currentWidth < w {
+		line += statusStyle.Render(strings.Repeat(" ", w-currentWidth))
 	}
-	return statusStyle.Render(textutil.PadToWidth(line, w))
+	return line
 }
 
 func (m Model) formatKeyBadge(key string, parentBg string) string {

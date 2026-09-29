@@ -93,7 +93,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if err := m.provider.ValidateResume(m.ctx, s.ID); err != nil {
 					m.lastErr = err.Error()
 					m.errOffset = 0
-					m.status = "resume failed: CLI not found [e: view details]"
+					m.status = "resume failed: CLI not found"
 					m.mode = modeError
 					return m, nil
 				}
