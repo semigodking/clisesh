@@ -6,7 +6,7 @@
 
 - **Interactive TUI (Bubble Tea)**: Browse sessions with AI-generated descriptions, human-readable relative ages, working directory accents, and real-time filtering.
 - **Manual Description Editing**: Press `m` on any session to manually edit, customize, or override its description directly in a modal dialog. Persisted immediately to disk cache.
-- **Multiple Providers Behind One Interface**: Aggregates sessions across **Kiro**, **Antigravity (`agy`)**, **Claude Code**, and **OpenAI Codex** in a unified, newest-first view.
+- **Multiple Providers Behind One Interface**: Aggregates sessions across **Kiro**, **Antigravity (`agy`)**, **Claude Code**, **OpenAI Codex**, and **OpenCode** in a unified, newest-first view.
 - **Capability-Aware UI**: Automatically adapts hotkeys and visible hints based on what the active provider supports (`HasTitle`, `CanResume`, `CanDelete`, `CascadeDelete`, `ProvidesPrompts`).
 - **Active Session Safety**: Live lock detection (`●`) prevents accidental deletion of running sessions across all providers (skips active sessions in batch deletes).
 - **Branded & High-Contrast Theming**:
@@ -46,7 +46,7 @@ clisesh                       # launch the TUI with the configured provider (def
 clisesh tui --provider kiro   # launch the TUI for a specific provider
 clisesh list --provider all   # list sessions across all providers (non-interactive)
 clisesh summarize [id...]     # generate & cache descriptions
-clisesh providers             # list available providers (kiro, antigravity, claude, codex)
+clisesh providers             # list available providers (kiro, antigravity, claude, codex, opencode)
 clisesh theme list            # list color themes
 clisesh theme preview gray    # preview a theme's color roles
 clisesh cache stats           # show cached description counts
@@ -64,7 +64,7 @@ clisesh help                  # full usage
 | `g` / `home`, `G` / `end` | Jump to top / bottom | Quick navigation |
 | `pgup` / `pgdown` | Page up / down | Fast scrolling |
 | `space` | Toggle mark | Multi-select sessions |
-| `enter` | Resume session | Replaces process with target CLI (`kiro-cli`, `agy`, `claude`, `codex`) |
+| `enter` | Resume session | Replaces process with target CLI (`kiro-cli`, `agy`, `claude`, `codex`, `opencode`) |
 | `m` | Edit description | Manually edits description in a modal dialog and saves to cache |
 | `r` | Re-summarize | Queues selected (or cursor) session for background summarization |
 | `d` | Delete session | Prompts for confirmation; active sessions (`●`) are protected |
@@ -85,6 +85,7 @@ clisesh help                  # full usage
 | **Antigravity** | `antigravity` / `agy` | `~/.gemini/antigravity-cli/brain/` | `flock` on `presence/<uuid>.lock` | `agy --conversation <id>` |
 | **Claude Code** | `claude` | `~/.claude/projects/` | PID check in `~/.claude/sessions/` | `claude --resume <id>` |
 | **OpenAI Codex** | `codex` | `~/.codex/sessions/` | Active process & session rollout check | `codex resume <id>` |
+| **OpenCode** | `opencode` | `~/.local/share/opencode/` + service | Active sessions via `/api/session/active` | `opencode --session <id>` |
 
 Select `all` (default) or a specific provider via config (`provider = "..."`), environment variable (`CLISESH_PROVIDER=...`), or `--provider <name>`.
 

@@ -43,7 +43,7 @@ summarizers) depend on the domain abstractions, never the reverse.
 |-----------------------|-------------------------------------------------------------------|
 | `internal/domain`     | `Session`, `Capabilities`, `SessionProvider` interface. No deps.  |
 | `internal/textutil`   | CJK-aware display width, truncation, wrapping, age formatting.    |
-| `internal/provider`   | Provider registry + concrete providers (`kiro`, `antigravity`, `claude`, `codex`, `aggregate`). |
+| `internal/provider`   | Provider registry + concrete providers (`kiro`, `antigravity`, `claude`, `codex`, `opencode`, `aggregate`). |
 | `internal/summarize`  | `Summarizer` interface + backends (`llm`, `subprocess`).          |
 | `internal/cache`      | Per-provider, versioned description cache.                        |
 | `internal/config`     | TOML + env + flags layered configuration.                         |

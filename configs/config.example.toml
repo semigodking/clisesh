@@ -3,7 +3,7 @@
 # Precedence (highest wins): CLI flags > env (CLISESH_*) > this file > defaults.
 
 # Active session provider: "all" (aggregate every supported CLI), "kiro",
-# "antigravity", "claude", or "codex". Default is "all", which discovers and merges
+# "antigravity", "claude", "codex", or "opencode". Default is "all", which discovers and merges
 # sessions from every supported CLI installed on this machine.
 provider = "all"
 

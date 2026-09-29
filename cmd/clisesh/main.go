@@ -22,6 +22,7 @@ import (
 	_ "github.com/semigodking/clisesh/internal/provider/claude"      // register claude
 	_ "github.com/semigodking/clisesh/internal/provider/codex"       // register codex
 	_ "github.com/semigodking/clisesh/internal/provider/kiro"        // register kiro
+	_ "github.com/semigodking/clisesh/internal/provider/opencode"    // register opencode
 	"github.com/semigodking/clisesh/internal/textutil"
 	"github.com/semigodking/clisesh/internal/theme"
 )

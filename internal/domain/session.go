@@ -4,7 +4,10 @@
 // config, theme, cache, or summarize packages — dependencies point inward.
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Session is the provider-neutral representation of a single agent
 // conversation. Concrete providers (Kiro, Antigravity, ...) map their
@@ -40,13 +43,18 @@ func (s Session) IsSubagent() bool {
 	return s.ParentID != ""
 }
 
-// ShortID returns the first 8 characters of the ID for compact display,
-// or the whole ID if it is shorter.
+// ShortID returns a compact 8-character identifier for display.
+// For OpenCode sessions (or session IDs prefixed with "ses_"), the "ses_" prefix
+// is stripped before truncation so meaningful session characters are shown.
 func (s Session) ShortID() string {
-	if len(s.ID) <= 8 {
-		return s.ID
+	id := s.ID
+	if s.ProviderID == "opencode" || strings.HasPrefix(id, "ses_") {
+		id = strings.TrimPrefix(id, "ses_")
 	}
-	return s.ID[:8]
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
 }
 
 // Capabilities advertises which features a provider supports so the UI can

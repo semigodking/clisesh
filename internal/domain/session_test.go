@@ -15,6 +15,10 @@ func TestShortID(t *testing.T) {
 	if short.ShortID() != "abc" {
 		t.Errorf("ShortID for short id = %q, want abc", short.ShortID())
 	}
+	opencodeSess := Session{ID: "ses_f14aac24bffeJaXyEHtxaBzxOU", ProviderID: "opencode"}
+	if opencodeSess.ShortID() != "f14aac24" {
+		t.Errorf("ShortID for opencode session = %q, want f14aac24", opencodeSess.ShortID())
+	}
 }
 
 func TestIsSubagent(t *testing.T) {

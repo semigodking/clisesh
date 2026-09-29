@@ -70,8 +70,8 @@ func TestProvidersRegistered(t *testing.T) {
 	for _, n := range names {
 		has[n] = true
 	}
-	if !has["kiro"] || !has["antigravity"] {
-		t.Errorf("expected kiro and antigravity registered, got %v", names)
+	if !has["kiro"] || !has["antigravity"] || !has["claude"] || !has["codex"] || !has["opencode"] {
+		t.Errorf("expected kiro, antigravity, claude, codex, and opencode registered, got %v", names)
 	}
 }
 
