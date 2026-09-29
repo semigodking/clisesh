@@ -238,4 +238,3 @@ func TestSubprocessSetsStdinToEmptyReader(t *testing.T) {
 		t.Error("expected capturedCmd.Stdin to be non-nil (bytes.NewReader(nil)) to prevent child process stdin hangs")
 	}
 }
-

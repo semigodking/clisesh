@@ -215,5 +215,3 @@ func TestKeyRoleOverridesAndStyleWithBg(t *testing.T) {
 		t.Errorf("KeyStyleWithBg with fallback bg should render styled key, got %q", renderedWithFallback)
 	}
 }
-
-

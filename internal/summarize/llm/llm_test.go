@@ -217,4 +217,3 @@ func TestSummarizeObservesRPMLimiter(t *testing.T) {
 		t.Errorf("expected 3 HTTP requests, got %d", reqCount)
 	}
 }
-

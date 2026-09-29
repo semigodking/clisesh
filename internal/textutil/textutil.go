@@ -78,7 +78,6 @@ func TruncateRunes(s string, maxRunes int, appendEllipsis bool) string {
 	return string(runes[:maxRunes])
 }
 
-
 // PadToWidth truncates s to cols columns, then right-pads with spaces so the
 // result occupies exactly cols display columns.
 func PadToWidth(s string, cols int) string {

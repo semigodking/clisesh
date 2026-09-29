@@ -144,17 +144,17 @@ func Names() []string {
 
 // defaultProviderColors maps known agent CLI provider IDs to their signature brand color.
 var defaultProviderColors = map[string]string{
-	"antigravity": "brightblue",    // Google blue #4285F4
+	"antigravity": "brightblue", // Google blue #4285F4
 	"agy":         "brightblue",
-	"kiro":        "magenta",       // Kiro purple #9046FF
+	"kiro":        "magenta", // Kiro purple #9046FF
 	"kiro-cli":    "magenta",
-	"claude":      "brightred",     // Anthropic terracotta orange #DA7756
+	"claude":      "brightred", // Anthropic terracotta orange #DA7756
 	"claude-code": "brightred",
-	"codex":       "green",         // OpenAI mint green #10A37F
-	"cursor":      "cyan",          // Cursor cyan #00E5FF
-	"deepseek":    "blue",          // DeepSeek ocean blue #0066FF / #1F4E79
+	"codex":       "green", // OpenAI mint green #10A37F
+	"cursor":      "cyan",  // Cursor cyan #00E5FF
+	"deepseek":    "blue",  // DeepSeek ocean blue #0066FF / #1F4E79
 	"dsk":         "blue",
-	"glm":         "brightcyan",    // Zhipu cobalt blue #345DFF
+	"glm":         "brightcyan", // Zhipu cobalt blue #345DFF
 	"zhipu":       "brightcyan",
 	"aider":       "brightyellow",  // Aider amber yellow #F59E0B
 	"opencode":    "brightmagenta", // OpenCode purple/magenta #A855F7

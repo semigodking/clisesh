@@ -155,10 +155,10 @@ func (p *Provider) inspectSession(filePath string, defaultModTime time.Time) (cw
 		linesChecked++
 		line := scanner.Bytes()
 		var meta struct {
-			Type      string `json:"type"`
-			CWD       string `json:"cwd"`
+			Type       string `json:"type"`
+			CWD        string `json:"cwd"`
 			WorkingDir string `json:"working_dir"`
-			Timestamp string `json:"timestamp"`
+			Timestamp  string `json:"timestamp"`
 		}
 		if err := json.Unmarshal(line, &meta); err == nil {
 			if meta.CWD != "" {

@@ -320,4 +320,3 @@ max_rpm = 60
 		t.Errorf("expected flag override RPM = 200, got %d", cfgFlag.Summarizer.RPM)
 	}
 }
-

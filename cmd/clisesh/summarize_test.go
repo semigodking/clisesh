@@ -106,4 +106,3 @@ func TestBuildSummarizerRPMResolution(t *testing.T) {
 		t.Errorf("expected s2 to have RPM 60, got %v", llm2)
 	}
 }
-

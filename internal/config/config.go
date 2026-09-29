@@ -41,16 +41,16 @@ type SummarizerConfig struct {
 	Model          string                      `toml:"model"`   // global fallback model
 	TitleLen       int                         `toml:"title_len"`
 	TimeoutSec     int                         `toml:"timeout_sec"`
-	BatchSize      int                         `toml:"batch_size"`        // sessions per batch (default: 5)
-	RPM            int                         `toml:"rpm"`               // max requests per minute for API (default: 0 = unlimited)
-	MaxRPM         int                         `toml:"max_rpm"`           // alias for rpm
-	MaxPrompts     int                         `toml:"max_prompts"`       // max prompts extracted per session (default: 10)
-	HeadPrompts    int                         `toml:"head_prompts"`      // initial prompts to include (default: 2)
-	TailPrompts    int                         `toml:"tail_prompts"`      // latest prompts to include (default: 1)
-	PromptMaxChars int                         `toml:"prompt_max_chars"`  // char cap per single prompt (default: 400)
-	MaxChars       int                         `toml:"max_chars"`         // char cap per session in prompt (default: 1500)
-	Subprocess     map[string]SubprocessConfig `toml:"subprocess"`        // [summarizer.subprocess.<name>]
-	LLM            map[string]LLMConfig        `toml:"llm"`               // [summarizer.llm.<name>]
+	BatchSize      int                         `toml:"batch_size"`       // sessions per batch (default: 5)
+	RPM            int                         `toml:"rpm"`              // max requests per minute for API (default: 0 = unlimited)
+	MaxRPM         int                         `toml:"max_rpm"`          // alias for rpm
+	MaxPrompts     int                         `toml:"max_prompts"`      // max prompts extracted per session (default: 10)
+	HeadPrompts    int                         `toml:"head_prompts"`     // initial prompts to include (default: 2)
+	TailPrompts    int                         `toml:"tail_prompts"`     // latest prompts to include (default: 1)
+	PromptMaxChars int                         `toml:"prompt_max_chars"` // char cap per single prompt (default: 400)
+	MaxChars       int                         `toml:"max_chars"`        // char cap per session in prompt (default: 1500)
+	Subprocess     map[string]SubprocessConfig `toml:"subprocess"`       // [summarizer.subprocess.<name>]
+	LLM            map[string]LLMConfig        `toml:"llm"`              // [summarizer.llm.<name>]
 }
 
 // Config is the fully-resolved application configuration.
