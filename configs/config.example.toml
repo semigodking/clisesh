@@ -68,8 +68,13 @@ title_len = 80
   # rpm = 30
 
 # Optional per-role color overrides (see docs/specs/003-theme.md).
+# Available roles: cursor, marked, header, footer, status, age, lock, cwd, warning, title, key.
 # You can also customize individual CLI provider badge colors using `provider_<name>_fg`:
 # [theme_overrides]
+# footer_fg = "250"
+# footer_bg = "236"
+# key_fg = "220"
+# key_bg = "238"
 # status_fg = "250"
 # status_bg = "237"
 # provider_kiro_fg = "magenta"

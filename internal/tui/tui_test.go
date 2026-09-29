@@ -12,8 +12,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/semigodking/clisesh/internal/cache"
 	"github.com/semigodking/clisesh/internal/domain"
 	"github.com/semigodking/clisesh/internal/summarize"
+	"github.com/semigodking/clisesh/internal/textutil"
 	"github.com/semigodking/clisesh/internal/theme"
 )
 
@@ -482,8 +484,36 @@ func TestFooterHidesDeleteWhenIncapable(t *testing.T) {
 	}
 }
 
+func TestFooterAndKeyColorConfiguration(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+
+	th, err := theme.Load("default", map[string]string{
+		"footer_fg": "250",
+		"footer_bg": "236",
+		"key_fg":    "220",
+		"key_bg":    "234",
+	})
+	if err != nil {
+		t.Fatalf("failed to load theme: %v", err)
+	}
+
+	m, _ := newModel(allCaps())
+	m.theme = th
+	footer := m.viewFooter(120)
+
+	// Footer should render keys with key colors and labels with footer colors
+	if !contains(footer, "space") || !contains(footer, "mark") {
+		t.Errorf("footer missing key hints: %q", footer)
+	}
+	// Plain text should be present and valid width
+	if textutil.DisplayWidth(stripANSI(footer)) != 120 {
+		t.Errorf("expected footer to have width 120, got %d", textutil.DisplayWidth(stripANSI(footer)))
+	}
+}
+
 func contains(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && (indexOf(haystack, needle) >= 0)
+	return strings.Contains(strings.ToLower(haystack), strings.ToLower(needle))
 }
 
 func indexOf(s, sub string) int {
@@ -574,6 +604,32 @@ func TestQuitCancelsContext(t *testing.T) {
 	}
 }
 
+func TestEscInNormalModeDoesNotQuit(t *testing.T) {
+	fp := &fakeProvider{caps: allCaps()}
+	th, _ := theme.Load("default", nil)
+	cancelled := false
+	ctx, cancel := context.WithCancel(context.Background())
+	wrappedCancel := func() {
+		cancelled = true
+		cancel()
+	}
+
+	m := New(fp, nil, nil, th, testSessions(), nil, nil, ctx, wrappedCancel)
+	m.width, m.height = 80, 20
+
+	mm, cmd := m.Update(key("esc"))
+	m = mm.(Model)
+	if cancelled {
+		t.Error("esc in normal mode should not cancel context")
+	}
+	if m.quitting {
+		t.Error("esc in normal mode should not set quitting to true")
+	}
+	if cmd != nil {
+		t.Errorf("esc in normal mode should not return quit command, got %v", cmd)
+	}
+}
+
 func TestSingleLineStatusError(t *testing.T) {
 	m, _ := newModel(allCaps())
 	multilineErr := errors.New("http 500:\n{\n  \"error\": \"internal error\",\n  \"details\": \"server crashed\"\n}")
@@ -593,7 +649,7 @@ func TestSingleLineStatusError(t *testing.T) {
 	if strings.Contains(statusView, "\n") {
 		t.Errorf("viewStatus should NEVER contain newlines, got:\n%s", statusView)
 	}
-	if !strings.Contains(statusView, "[e: view error]") {
+	if !strings.Contains(strings.ToLower(stripANSI(statusView)), "[e: view error]") {
 		t.Errorf("viewStatus should contain error hint, got %q", statusView)
 	}
 }
@@ -1335,4 +1391,182 @@ func TestWorkerPoolConcurrencyAndDynamicRefill(t *testing.T) {
 		}
 	}
 }
+
+func TestResummarizeFailureRestoresOriginalDescription(t *testing.T) {
+	fp := &fakeProvider{caps: allCaps()}
+	th, _ := theme.Load("default", nil)
+	fs := &fakeSummarizer{err: errors.New("network timeout")}
+
+	// Session with no title and an existing description
+	sessions := []domain.Session{
+		{ID: "sess-1", Title: "", Description: "Previous valid summary"},
+	}
+	m := New(fp, fs, nil, th, sessions, nil, nil, nil, nil)
+	m.width, m.height = 80, 24
+
+	// Trigger 'r' (re-summarize)
+	mm, cmd := m.Update(key("r"))
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("expected command from 'r'")
+	}
+
+	// While in-flight, it shows placeholder
+	if m.sessions[0].Description != "Summarizing…" {
+		t.Fatalf("expected Summarizing…, got %q", m.sessions[0].Description)
+	}
+
+	// Deliver error message
+	msg := cmd()
+	mm, nextCmd := m.Update(msg)
+	m = mm.(Model)
+
+	if nextCmd != nil {
+		t.Errorf("expected nil nextCmd on error, got %v", nextCmd)
+	}
+
+	// Crucial assertion: the description must be restored to "Previous valid summary",
+	// NOT "(no description)"!
+	if m.sessions[0].Description != "Previous valid summary" {
+		t.Errorf("session description after failure = %q, want 'Previous valid summary'", m.sessions[0].Description)
+	}
+	if !strings.HasPrefix(m.status, "summarize failed:") {
+		t.Errorf("status = %q, want prefix 'summarize failed:'", m.status)
+	}
+}
+
+func TestResummarizeQueueAbortedRestoresOriginalDescriptions(t *testing.T) {
+	fp := &fakeProvider{caps: allCaps()}
+	th, _ := theme.Load("default", nil)
+	fs := &fakeSummarizer{err: errors.New("backend crashed")}
+
+	// 3 sessions with existing summaries and no titles
+	sessions := []domain.Session{
+		{ID: "s1", Title: "", Description: "Summary 1"},
+		{ID: "s2", Title: "", Description: "Summary 2"},
+		{ID: "s3", Title: "", Description: "Summary 3"},
+	}
+	m := New(fp, fs, nil, th, sessions, nil, nil, nil, nil)
+	m.SetBatchSize(1) // 1 in flight, 2 queued
+	m.marked["s1"] = true
+	m.marked["s2"] = true
+	m.marked["s3"] = true
+
+	// Trigger 'r' on all 3
+	mm, cmd := m.Update(key("r"))
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("expected command from 'r'")
+	}
+
+	// s1 is Summarizing…, s2 and s3 are Queued for summary…
+	if m.sessions[0].Description != "Summarizing…" {
+		t.Errorf("s1 = %q, want Summarizing…", m.sessions[0].Description)
+	}
+	if m.sessions[1].Description != "Queued for summary…" {
+		t.Errorf("s2 = %q, want Queued for summary…", m.sessions[1].Description)
+	}
+	if m.sessions[2].Description != "Queued for summary…" {
+		t.Errorf("s3 = %q, want Queued for summary…", m.sessions[2].Description)
+	}
+
+	// s1 fails
+	msg := cmd()
+	mm, nextCmd := m.Update(msg)
+	m = mm.(Model)
+
+	if nextCmd != nil {
+		t.Errorf("expected nil nextCmd on abort, got %v", nextCmd)
+	}
+
+	// All 3 sessions must restore their original summaries!
+	if m.sessions[0].Description != "Summary 1" {
+		t.Errorf("s1 desc = %q, want 'Summary 1'", m.sessions[0].Description)
+	}
+	if m.sessions[1].Description != "Summary 2" {
+		t.Errorf("s2 desc = %q, want 'Summary 2'", m.sessions[1].Description)
+	}
+	if m.sessions[2].Description != "Summary 3" {
+		t.Errorf("s3 desc = %q, want 'Summary 3'", m.sessions[2].Description)
+	}
+}
+
+func TestManualEditDescription(t *testing.T) {
+	fp := &fakeProvider{caps: allCaps()}
+	th, _ := theme.Load("default", nil)
+	c := cache.Open(t.TempDir(), "fake")
+
+	sessions := []domain.Session{
+		{ID: "s1", Title: "Original Title 1", Description: "Initial summary 1"},
+		{ID: "s2", Title: "Original Title 2", Description: "Initial summary 2"},
+	}
+	m := New(fp, nil, c, th, sessions, nil, nil, nil, nil)
+	m.width = 80
+	m.height = 20
+
+	// 1. Press 'm' to start editing on s1
+	mm, cmd := m.Update(key("m"))
+	m = mm.(Model)
+	if m.mode != modeEditDesc {
+		t.Fatalf("expected modeEditDesc, got %v", m.mode)
+	}
+	if m.editSessionID != "s1" {
+		t.Fatalf("expected editSessionID = 's1', got %q", m.editSessionID)
+	}
+	if m.editInput.Value() != "Initial summary 1" {
+		t.Fatalf("expected edit input initial value 'Initial summary 1', got %q", m.editInput.Value())
+	}
+	if cmd == nil {
+		t.Errorf("expected focus command when entering edit mode")
+	}
+
+	// 2. Press 'esc' to cancel
+	mm, _ = m.Update(key("esc"))
+	m = mm.(Model)
+	if m.mode != modeNormal {
+		t.Fatalf("expected modeNormal after esc, got %v", m.mode)
+	}
+	if m.sessions[0].Description != "Initial summary 1" {
+		t.Errorf("expected description unchanged after esc, got %q", m.sessions[0].Description)
+	}
+
+	// 3. Press 'm' again, edit description, and press 'enter' to save
+	mm, _ = m.Update(key("m"))
+	m = mm.(Model)
+	m.editInput.SetValue("Manually updated description")
+	mm, _ = m.Update(key("enter"))
+	m = mm.(Model)
+
+	if m.mode != modeNormal {
+		t.Fatalf("expected modeNormal after enter, got %v", m.mode)
+	}
+	if m.sessions[0].Description != "Manually updated description" {
+		t.Errorf("expected updated description in session, got %q", m.sessions[0].Description)
+	}
+	if m.status != "description updated" {
+		t.Errorf("expected status 'description updated', got %q", m.status)
+	}
+
+	// Verify it was persisted to cache
+	cached, ok := c.Get("s1")
+	if !ok || cached != "Manually updated description" {
+		t.Errorf("expected cache to have 'Manually updated description', got %q (ok=%v)", cached, ok)
+	}
+
+	// 4. Test rendering of edit dialog
+	mm, _ = m.Update(key("m"))
+	m = mm.(Model)
+	viewStr := m.View()
+	if !strings.Contains(viewStr, "Edit Session Description") {
+		t.Errorf("expected view to contain 'Edit Session Description', got:\n%s", viewStr)
+	}
+	if !strings.Contains(viewStr, "Manually updated description") {
+		t.Errorf("expected view to contain current value, got:\n%s", viewStr)
+	}
+	if !strings.Contains(strings.ToLower(stripANSI(viewStr)), "enter: save") {
+		t.Errorf("expected view to contain footer hint, got:\n%s", viewStr)
+	}
+}
+
+
 

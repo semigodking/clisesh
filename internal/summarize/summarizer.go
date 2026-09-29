@@ -130,7 +130,7 @@ func formatPrompts(prompts []string, headCount, tailCount, promptMaxChars int) s
 // need LLM summarization. maxChars bounds each session's content.
 func BuildBatchPrompt(items []Item, titleLen, maxChars int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Generate brief, descriptive titles (under %d characters) for these %d sessions.\n",
+	fmt.Fprintf(&b, "Generate brief, descriptive titles (under %d characters) for these %d sessions in same language as content.\n",
 		titleLen, len(items))
 	b.WriteString("Focus on the main task, topic, or problem. Be concise and specific.\n")
 	b.WriteString("Respond with ONLY a numbered list where each line is \"<n>: <description>\".\n\n")

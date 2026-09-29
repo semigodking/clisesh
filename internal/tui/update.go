@@ -47,6 +47,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInfoKey(msg)
 	case modeError:
 		return m.handleErrorKey(msg)
+	case modeEditDesc:
+		return m.handleEditDescKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -54,7 +56,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "esc", "ctrl+c":
+	case "q", "ctrl+c":
 		if m.cancel != nil {
 			m.cancel()
 		}
@@ -115,6 +117,11 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errOffset = 0
 			m.mode = modeError
 		}
+	case "m":
+		if s, ok := m.current(); ok {
+			cmd := m.openEditDesc(s)
+			return m, cmd
+		}
 	case "r":
 		if m.caps.ProvidesPrompts {
 			if ids := m.actionTargets(); len(ids) > 0 {
@@ -133,6 +140,21 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) handleEditDescKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.cancelEditDesc()
+		return m, nil
+	case "enter":
+		m.saveEditedDesc()
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.editInput, cmd = m.editInput.Update(msg)
+		return m, cmd
+	}
 }
 
 func (m Model) handleInfoKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

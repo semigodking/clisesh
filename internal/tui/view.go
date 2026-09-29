@@ -23,6 +23,9 @@ func (m Model) View() string {
 	if m.mode == modeError {
 		return m.overlayError(base)
 	}
+	if m.mode == modeEditDesc {
+		return m.overlayEditDesc(base)
+	}
 	return base
 }
 
@@ -181,7 +184,8 @@ func (m Model) viewStatus(w int) string {
 	case st != "":
 		cleanStatus := textutil.SingleLine(st)
 		if isError {
-			hint := " [e: view error]"
+			statusBg := m.theme.BgColor(theme.Warning)
+			hint := " [" + m.formatKeyBadge("E", statusBg) + ": view error]"
 			maxStatusLen := w - textutil.DisplayWidth(right) - textutil.DisplayWidth(hint) - 2
 			if maxStatusLen < 10 {
 				maxStatusLen = 10
@@ -220,34 +224,98 @@ func (m Model) viewStatus(w int) string {
 	return statusStyle.Render(textutil.PadToWidth(line, w))
 }
 
+func (m Model) formatKeyBadge(key string, parentBg string) string {
+	return m.theme.KeyStyleWithBg(parentBg).Render(key)
+}
+
+func (m Model) formatKeyHint(key, label string, parentBg string, parentStyle lipgloss.Style) string {
+	return m.formatKeyBadge(key, parentBg) + parentStyle.Render(": "+label)
+}
+
 func (m Model) viewFooter(w int) string {
-	var keys []string
-	keys = append(keys, "space: mark", "/: filter", "i: info")
-	if m.caps.CanResume {
-		keys = append([]string{"enter: resume"}, keys...)
+	footerStyle := m.theme.Style(theme.Footer)
+	footerBg := m.theme.BgColor(theme.Footer)
+
+	if m.mode == modeConfirmDelete {
+		warnStyle := m.theme.Style(theme.Warning)
+		warnBg := m.theme.BgColor(theme.Warning)
+		n := len(m.deleteTargets())
+		targetStr := fmt.Sprintf(" Delete %d session(s) ", n)
+		if m.hasActiveTarget() {
+			targetStr = fmt.Sprintf(" Delete %d session(s) (active skipped)? ", n)
+		} else {
+			targetStr = fmt.Sprintf(" Delete %d session(s)? ", n)
+		}
+		part1 := warnStyle.Render(targetStr)
+		part2 := m.formatKeyBadge("Y", warnBg)
+		part3 := warnStyle.Render(" to confirm, any other key to cancel ")
+		rendered := part1 + part2 + part3
+		currentWidth := lipgloss.Width(rendered)
+		if currentWidth < w {
+			rendered += warnStyle.Render(strings.Repeat(" ", w-currentWidth))
+		}
+		return rendered
 	}
+
+	if m.mode == modeFilter {
+		part1 := footerStyle.Render(" ")
+		part2 := m.formatKeyBadge("ESC", footerBg)
+		part3 := footerStyle.Render(": clear  ")
+		part4 := m.formatKeyBadge("Enter", footerBg)
+		part5 := footerStyle.Render(": apply  (type to filter) ")
+		rendered := part1 + part2 + part3 + part4 + part5
+		currentWidth := lipgloss.Width(rendered)
+		if currentWidth < w {
+			rendered += footerStyle.Render(strings.Repeat(" ", w-currentWidth))
+		}
+		return rendered
+	}
+
+	if m.mode == modeEditDesc {
+		part1 := footerStyle.Render(" ")
+		part2 := m.formatKeyBadge("Enter", footerBg)
+		part3 := footerStyle.Render(": save   ")
+		part4 := m.formatKeyBadge("ESC", footerBg)
+		part5 := footerStyle.Render(": cancel ")
+		rendered := part1 + part2 + part3 + part4 + part5
+		currentWidth := lipgloss.Width(rendered)
+		if currentWidth < w {
+			rendered += footerStyle.Render(strings.Repeat(" ", w-currentWidth))
+		}
+		return rendered
+	}
+
+	type keyItem struct {
+		key, label string
+	}
+	var items []keyItem
+	if m.caps.CanResume {
+		items = append(items, keyItem{"Enter", "resume"})
+	}
+	items = append(items,
+		keyItem{"Space", "mark"},
+		keyItem{"/", "filter"},
+		keyItem{"I", "info"},
+		keyItem{"M", "edit"},
+	)
 	if m.caps.ProvidesPrompts {
-		keys = append(keys, "r: re-summarize")
+		items = append(items, keyItem{"R", "re-summarize"})
 	}
 	if m.caps.CanDelete {
-		keys = append(keys, "d: delete")
+		items = append(items, keyItem{"D", "delete"})
 	}
-	keys = append(keys, "q: quit")
+	items = append(items, keyItem{"Q", "quit"})
 
-	hint := " " + strings.Join(keys, "  ") + " "
-	if m.mode == modeConfirmDelete {
-		n := len(m.deleteTargets())
-		if m.hasActiveTarget() {
-			hint = fmt.Sprintf(" Delete %d session(s) (active skipped)? y to confirm, any other key to cancel ", n)
-		} else {
-			hint = fmt.Sprintf(" Delete %d session(s)? y to confirm, any other key to cancel ", n)
-		}
-		return m.theme.Style(theme.Warning).Render(textutil.PadToWidth(hint, w))
+	var formattedItems []string
+	for _, it := range items {
+		formattedItems = append(formattedItems, m.formatKeyHint(it.key, it.label, footerBg, footerStyle))
 	}
-	if m.mode == modeFilter {
-		hint = " esc: clear  enter: apply  (type to filter) "
+	hint := footerStyle.Render(" ") + strings.Join(formattedItems, footerStyle.Render("  ")) + footerStyle.Render(" ")
+	currentWidth := lipgloss.Width(hint)
+	if currentWidth < w {
+		hint += footerStyle.Render(strings.Repeat(" ", w-currentWidth))
 	}
-	return m.theme.Style(theme.Footer).Render(textutil.PadToWidth(hint, w))
+	return hint
 }
 
 // infoBox renders the info popup as a bordered dialog box (no full-screen
@@ -321,11 +389,15 @@ func (m Model) infoBox() string {
 		b.WriteString(wrappedDesc[i] + "\n")
 	}
 
+	footerStyle := m.theme.Style(theme.Footer)
+	footerBg := m.theme.BgColor(theme.Footer)
 	if len(wrappedDesc) > maxDescLines {
-		hint := fmt.Sprintf(" [%d-%d/%d]  ↑/↓: scroll  esc: close ", offset+1, end, len(wrappedDesc))
-		b.WriteString("\n" + m.theme.Style(theme.Footer).Render(hint))
+		hint := footerStyle.Render(fmt.Sprintf(" [%d-%d/%d]  ", offset+1, end, len(wrappedDesc))) +
+			m.formatKeyBadge("↑/↓", footerBg) + footerStyle.Render(": scroll  ") +
+			m.formatKeyBadge("ESC", footerBg) + footerStyle.Render(": close ")
+		b.WriteString("\n" + hint)
 	} else {
-		b.WriteString("\n" + m.theme.Style(theme.Footer).Render(" press any key to close "))
+		b.WriteString("\n" + footerStyle.Render(" press any key to close "))
 	}
 
 	return lipgloss.NewStyle().
@@ -416,13 +488,22 @@ func (m Model) errorBox() string {
 		b.WriteByte('\n')
 	}
 
+	footerStyle := m.theme.Style(theme.Footer)
+	footerBg := m.theme.BgColor(theme.Footer)
 	var hint string
 	if total > viewHeight {
-		hint = fmt.Sprintf(" [Lines %d-%d of %d]  ↑/↓/PgUp/PgDn: scroll  esc/q/e: close ", offset+1, end, total)
+		hint = footerStyle.Render(fmt.Sprintf(" [Lines %d-%d of %d]  ", offset+1, end, total)) +
+			m.formatKeyBadge("↑/↓/PgUp/PgDn", footerBg) + footerStyle.Render(": scroll  ") +
+			m.formatKeyBadge("ESC", footerBg) + footerStyle.Render("/") +
+			m.formatKeyBadge("Q", footerBg) + footerStyle.Render("/") +
+			m.formatKeyBadge("E", footerBg) + footerStyle.Render(": close ")
 	} else {
-		hint = " press esc, q, or e to close "
+		hint = footerStyle.Render(" press ") +
+			m.formatKeyBadge("ESC", footerBg) + footerStyle.Render(", ") +
+			m.formatKeyBadge("Q", footerBg) + footerStyle.Render(", or ") +
+			m.formatKeyBadge("E", footerBg) + footerStyle.Render(" to close ")
 	}
-	b.WriteString("\n" + m.theme.Style(theme.Footer).Render(hint))
+	b.WriteString("\n" + hint)
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -445,6 +526,69 @@ func (m Model) overlayError(base string) string {
 // the surrounding list visible (no full-screen clear).
 func (m Model) overlayInfo(base string) string {
 	box := m.infoBox()
+	if box == "" {
+		return base
+	}
+	return compositeBox(base, box, m.width)
+}
+
+// editDescBox renders the modal dialog box for manual description editing.
+func (m Model) editDescBox() string {
+	w := m.width
+	if w <= 0 {
+		w = 80
+	}
+
+	boxWidth := w - 8
+	if boxWidth > 76 {
+		boxWidth = 76
+	}
+	if boxWidth < 30 {
+		boxWidth = 30
+	}
+	contentWidth := boxWidth - 6
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
+
+	// Update textinput width to fit cleanly inside box
+	m.editInput.Width = contentWidth - textutil.DisplayWidth(m.editInput.Prompt) - 2
+	if m.editInput.Width < 10 {
+		m.editInput.Width = 10
+	}
+
+	var b strings.Builder
+	b.WriteString(m.theme.Style(theme.Title).Render("Edit Session Description"))
+	b.WriteString("\n\n")
+
+	for _, s := range m.sessions {
+		if s.ID == m.editSessionID {
+			badge := ProviderBadge(s.ProviderID)
+			writeField(&b, "Session:", fmt.Sprintf("[%s] %s", badge, s.ID))
+			break
+		}
+	}
+	b.WriteString("\n")
+	b.WriteString(m.editInput.View())
+	b.WriteString("\n\n")
+	footerStyle := m.theme.Style(theme.Footer)
+	footerBg := m.theme.BgColor(theme.Footer)
+	editHint := footerStyle.Render(" ") +
+		m.formatKeyBadge("Enter", footerBg) + footerStyle.Render(": save   ") +
+		m.formatKeyBadge("ESC", footerBg) + footerStyle.Render(": cancel ")
+	b.WriteString(editHint)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(borderColor)).
+		Padding(0, 2).
+		Width(contentWidth + 2).
+		Render(b.String())
+}
+
+// overlayEditDesc composites the description edit box centered over the base frame.
+func (m Model) overlayEditDesc(base string) string {
+	box := m.editDescBox()
 	if box == "" {
 		return base
 	}

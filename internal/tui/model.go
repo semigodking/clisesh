@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/semigodking/clisesh/internal/cache"
@@ -25,6 +26,7 @@ const (
 	modeConfirmDelete
 	modeInfo
 	modeError
+	modeEditDesc
 )
 
 // summarizeQueueState holds background summarization queue state.
@@ -41,6 +43,10 @@ type summarizeQueueState struct {
 	success    int
 	batchSize  int
 	maxPrompts int
+	// origDescs preserves the description of each session before it was marked
+	// as "Summarizing…" or "Queued for summary…", so that if summarization fails
+	// or is aborted, the session is restored to its exact previous state.
+	origDescs map[string]string
 	// status is the in-progress summarize message (e.g. "summarizing (2/5)…").
 	// Storing it here—rather than in Model.status—ensures that the value set
 	// during Init()'s popAndDispatchChunk call is visible in the outer model
@@ -69,6 +75,10 @@ type Model struct {
 	lastErr    string // full multiline error text from last operation failure
 	errOffset  int    // scroll offset in error dialog
 	infoOffset int    // scroll offset in session info dialog
+
+	// Description editing state
+	editInput     textinput.Model
+	editSessionID string
 
 	// resumeID is set to the chosen session id when the user resumes; main
 	// performs the actual exec after the TUI exits so the alt-screen is torn
@@ -99,6 +109,9 @@ func New(p domain.SessionProvider, s summarize.Summarizer, c *cache.Cache, th th
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ti := textinput.New()
+	ti.Prompt = "Description: "
+	ti.CharLimit = 256
 	return Model{
 		provider:         p,
 		summarizer:       s,
@@ -112,12 +125,64 @@ func New(p domain.SessionProvider, s summarize.Summarizer, c *cache.Cache, th th
 		cancel:           cancel,
 		pendingSummaries: pendingSummaries,
 		promptsCache:     promptsCache,
+		editInput:        ti,
 		summState: &summarizeQueueState{
 			inFlight:   map[string]bool{},
+			origDescs:  map[string]string{},
 			batchSize:  1, // 1 session per chunk so each record updates UI immediately when finished
 			maxPrompts: 10,
 		},
 	}
+}
+
+// openEditDesc opens the description editing dialog for a session.
+func (m *Model) openEditDesc(s domain.Session) tea.Cmd {
+	m.mode = modeEditDesc
+	m.editSessionID = s.ID
+	initVal := s.Description
+	if initVal == summarizingPlaceholder || initVal == queuedPlaceholder || initVal == summarize.NoDescription {
+		if s.Title != "" {
+			initVal = s.Title
+		} else {
+			initVal = ""
+		}
+	}
+	m.editInput.SetValue(initVal)
+	m.editInput.CursorEnd()
+	return m.editInput.Focus()
+}
+
+// saveEditedDesc persists the edited description in memory and in the cache.
+func (m *Model) saveEditedDesc() {
+	newDesc := strings.TrimSpace(m.editInput.Value())
+	if newDesc == "" {
+		newDesc = summarize.NoDescription
+	}
+	id := m.editSessionID
+	for i := range m.sessions {
+		if m.sessions[i].ID == id {
+			m.sessions[i].Description = newDesc
+			break
+		}
+	}
+	if m.summState != nil && m.summState.origDescs != nil {
+		m.summState.origDescs[id] = newDesc
+	}
+	if m.cache != nil {
+		m.cache.Set(id, newDesc)
+		_ = m.cache.Save()
+	}
+	m.mode = modeNormal
+	m.editSessionID = ""
+	m.editInput.Blur()
+	m.status = "description updated"
+}
+
+// cancelEditDesc discards editing and returns to normal mode.
+func (m *Model) cancelEditDesc() {
+	m.mode = modeNormal
+	m.editSessionID = ""
+	m.editInput.Blur()
 }
 
 // SetBatchSize configures the chunk size for summarization requests.
@@ -231,6 +296,28 @@ func (m *Model) startSummarize(ids []string, actionVerb string) tea.Cmd {
 		actionVerb = "summarizing"
 	}
 
+	if m.summState.origDescs == nil {
+		m.summState.origDescs = map[string]string{}
+	}
+
+	// Capture original descriptions before updating placeholders, so failures can be restored.
+	for _, id := range freshIDs {
+		if _, already := m.summState.origDescs[id]; !already {
+			for _, s := range m.sessions {
+				if s.ID == id {
+					if s.Description != summarizingPlaceholder && s.Description != queuedPlaceholder {
+						m.summState.origDescs[id] = s.Description
+					} else if m.cache != nil {
+						if cached, ok := m.cache.Get(id); ok && cached != summarizingPlaceholder && cached != queuedPlaceholder {
+							m.summState.origDescs[id] = cached
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+
 	// Enqueue all fresh IDs.
 	m.summState.queue = append(m.summState.queue, freshIDs...)
 	m.summState.total += len(freshIDs)
@@ -248,6 +335,25 @@ func (m *Model) startSummarize(ids []string, actionVerb string) tea.Cmd {
 
 	// Fill available worker pool slots.
 	return m.refillWorkers(actionVerb)
+}
+
+// restoreDescription recovers the original description of a session when summarization fails or is aborted.
+// Precedence: original snapshot description > cached description > session title > NoDescription.
+func (m *Model) restoreDescription(id string, title string) string {
+	if m.summState != nil && m.summState.origDescs != nil {
+		if orig, ok := m.summState.origDescs[id]; ok && orig != "" && orig != summarizingPlaceholder && orig != queuedPlaceholder {
+			return orig
+		}
+	}
+	if m.cache != nil {
+		if cached, ok := m.cache.Get(id); ok && cached != "" && cached != summarizingPlaceholder && cached != queuedPlaceholder {
+			return cached
+		}
+	}
+	if title != "" {
+		return title
+	}
+	return summarize.NoDescription
 }
 
 // refillWorkers fills available worker pool slots (up to batchSize) from queue.
@@ -394,32 +500,30 @@ func (m *Model) applyResummarize(msg summarizeChunkDoneMsg) tea.Cmd {
 			m.status = "summarize failed: " + cleanErr
 			m.summState.status = "" // clear in-progress status on error
 		}
-		// Restore placeholders for failed chunk so they don't stay stuck.
+		// Restore descriptions for failed chunk so they don't stay stuck on placeholder.
 		for i := range m.sessions {
 			for _, id := range msg.ids {
 				if m.sessions[i].ID == id && m.sessions[i].Description == summarizingPlaceholder {
-					if m.sessions[i].Title != "" {
-						m.sessions[i].Description = m.sessions[i].Title
-					} else {
-						m.sessions[i].Description = summarize.NoDescription
+					m.sessions[i].Description = m.restoreDescription(id, m.sessions[i].Title)
+					if m.summState != nil && m.summState.origDescs != nil {
+						delete(m.summState.origDescs, id)
 					}
 				}
 			}
 		}
 
 		// On failure, abort remaining queued sessions rather than continuing to burn
-		// through chunks that will also fail. Revert their descriptions from
-		// Queued for summary… back to Title or NoDescription.
+		// through chunks that will also fail. Revert their descriptions back to their original state.
 		queuedSet := map[string]bool{}
 		for _, qid := range m.summState.queue {
 			queuedSet[qid] = true
 		}
 		for i := range m.sessions {
-			if queuedSet[m.sessions[i].ID] && m.sessions[i].Description == queuedPlaceholder {
-				if m.sessions[i].Title != "" {
-					m.sessions[i].Description = m.sessions[i].Title
-				} else {
-					m.sessions[i].Description = summarize.NoDescription
+			id := m.sessions[i].ID
+			if queuedSet[id] && m.sessions[i].Description == queuedPlaceholder {
+				m.sessions[i].Description = m.restoreDescription(id, m.sessions[i].Title)
+				if m.summState != nil && m.summState.origDescs != nil {
+					delete(m.summState.origDescs, id)
 				}
 			}
 		}
@@ -434,19 +538,22 @@ func (m *Model) applyResummarize(msg summarizeChunkDoneMsg) tea.Cmd {
 			m.errOffset = 0
 		}
 		for i := range m.sessions {
-			if d, ok := msg.descs[m.sessions[i].ID]; ok {
+			id := m.sessions[i].ID
+			if d, ok := msg.descs[id]; ok {
 				m.sessions[i].Description = d
 				m.summState.success++
+				if m.summState != nil && m.summState.origDescs != nil {
+					delete(m.summState.origDescs, id)
+				}
 				if m.cache != nil {
-					m.cache.Set(m.sessions[i].ID, d)
+					m.cache.Set(id, d)
 				}
 			} else {
-				for _, id := range msg.ids {
-					if m.sessions[i].ID == id && m.sessions[i].Description == summarizingPlaceholder {
-						if m.sessions[i].Title != "" {
-							m.sessions[i].Description = m.sessions[i].Title
-						} else {
-							m.sessions[i].Description = summarize.NoDescription
+				for _, mid := range msg.ids {
+					if id == mid && m.sessions[i].Description == summarizingPlaceholder {
+						m.sessions[i].Description = m.restoreDescription(id, m.sessions[i].Title)
+						if m.summState != nil && m.summState.origDescs != nil {
+							delete(m.summState.origDescs, id)
 						}
 					}
 				}
@@ -479,6 +586,7 @@ func (m *Model) applyResummarize(msg summarizeChunkDoneMsg) tea.Cmd {
 		m.summState.status = "" // clear in-progress status; final result goes to m.status
 		finalSuccess := m.summState.success
 		m.summState.success = 0
+		m.summState.origDescs = map[string]string{}
 		if m.lastErr == "" && aliveCount > 0 {
 			m.status = fmt.Sprintf("summarized %d session(s)", finalSuccess)
 		}
@@ -562,6 +670,7 @@ func (m *Model) doDelete(ids []string) {
 		gone[id] = true
 		if m.summState != nil {
 			delete(m.summState.inFlight, id)
+			delete(m.summState.origDescs, id)
 		}
 		if m.cache != nil {
 			m.cache.Delete(id)

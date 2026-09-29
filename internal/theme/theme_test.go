@@ -178,3 +178,42 @@ func TestThemeBgAndColorWithBg(t *testing.T) {
 	}
 }
 
+func TestKeyRoleOverridesAndStyleWithBg(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+
+	th, err := Load("default", map[string]string{
+		"key_fg": "brightcyan",
+		"key_bg": "235",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if th.roles[Key].fg != "brightcyan" {
+		t.Errorf("key_fg = %q, want brightcyan", th.roles[Key].fg)
+	}
+	if th.roles[Key].bg != "235" {
+		t.Errorf("key_bg = %q, want 235", th.roles[Key].bg)
+	}
+
+	rendered := th.KeyStyleWithBg("").Render("Enter")
+	if rendered == "Enter" || rendered == "" {
+		t.Errorf("KeyStyleWithBg should render styled key, got %q", rendered)
+	}
+
+	// Test fallback background when key_bg is empty
+	thNoBg, err := Load("default", map[string]string{
+		"key_fg": "yellow",
+		"key_bg": "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderedWithFallback := thNoBg.KeyStyleWithBg("236").Render("ESC")
+	if renderedWithFallback == "ESC" || renderedWithFallback == "" {
+		t.Errorf("KeyStyleWithBg with fallback bg should render styled key, got %q", renderedWithFallback)
+	}
+}
+
+

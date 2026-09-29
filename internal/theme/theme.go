@@ -27,6 +27,7 @@ const (
 	Cwd
 	Warning
 	Title
+	Key
 )
 
 // roleNames maps a Role to its string key (used for overrides like
@@ -42,6 +43,7 @@ var roleNames = map[Role]string{
 	Cwd:     "cwd",
 	Warning: "warning",
 	Title:   "title",
+	Key:     "key",
 }
 
 // AllRoles returns every role in a stable order.
@@ -87,6 +89,7 @@ var builtins = map[string]map[Role]colorPair{
 		Cwd:     {fg: "cyan"},
 		Warning: {fg: "red", bold: true},
 		Title:   {fg: "white", bold: true},
+		Key:     {fg: "black", bg: "white", bold: true},
 	},
 	"gray": {
 		Cursor:  {fg: "black", bg: "yellow", bold: true},
@@ -99,6 +102,7 @@ var builtins = map[string]map[Role]colorPair{
 		Cwd:     {fg: "244"},
 		Warning: {fg: "red", bold: true},
 		Title:   {fg: "252", bold: true},
+		Key:     {fg: "white", bg: "238", bold: true},
 	},
 	"high-contrast": {
 		Cursor:  {fg: "black", bg: "white", bold: true},
@@ -111,6 +115,7 @@ var builtins = map[string]map[Role]colorPair{
 		Cwd:     {fg: "white"},
 		Warning: {fg: "white", bg: "red", bold: true},
 		Title:   {fg: "white", bold: true},
+		Key:     {fg: "black", bg: "white", bold: true},
 	},
 	"256": {
 		Cursor:  {fg: "16", bg: "220", bold: true},
@@ -123,6 +128,7 @@ var builtins = map[string]map[Role]colorPair{
 		Cwd:     {fg: "80"},
 		Warning: {fg: "231", bg: "160", bold: true},
 		Title:   {fg: "231", bold: true},
+		Key:     {fg: "220", bg: "236", bold: true},
 	},
 }
 
@@ -254,6 +260,29 @@ func (t Theme) LockStyleWithBg(bg string) lipgloss.Style {
 		if c := parseColor(bg); c != nil {
 			s = s.Background(c)
 		}
+	}
+	return s
+}
+
+// KeyStyleWithBg returns the Lipgloss style for hotkey labels. If the Key role's
+// background is unset and fallbackBg is provided, fallbackBg is applied as background.
+func (t Theme) KeyStyleWithBg(fallbackBg string) lipgloss.Style {
+	cp := t.roles[Key]
+	s := lipgloss.NewStyle()
+	if c := parseColor(cp.fg); c != nil {
+		s = s.Foreground(c)
+	}
+	if cp.bg != "" {
+		if c := parseColor(cp.bg); c != nil {
+			s = s.Background(c)
+		}
+	} else if fallbackBg != "" {
+		if c := parseColor(fallbackBg); c != nil {
+			s = s.Background(c)
+		}
+	}
+	if cp.bold {
+		s = s.Bold(true)
 	}
 	return s
 }
