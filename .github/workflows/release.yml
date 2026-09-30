@@ -58,6 +58,7 @@ jobs:
               ./cmd/clisesh
 
             cp README.md "${BUILD_TMP}/" 2>/dev/null || true
+            cp README.zh-CN.md "${BUILD_TMP}/" 2>/dev/null || true
 
             tar -czf "${DIST_DIR}/${ARCHIVE_NAME}.tar.gz" -C "build_tmp" "${ARCHIVE_NAME}"
             rm -rf "build_tmp"

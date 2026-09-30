@@ -4,38 +4,37 @@
 [![Release](https://github.com/semigodking/clisesh/actions/workflows/release.yml/badge.svg)](https://github.com/semigodking/clisesh/actions/workflows/release.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/semigodking/clisesh?include_prereleases&style=flat-square)](https://github.com/semigodking/clisesh/releases)
 
-`clisesh` is a terminal UI designed to help developers **quickly find and restore previous agent CLI working environments**. If you frequently juggle multiple long-running tasks across different AI agent CLIs (Kiro, Antigravity, Claude Code, Codex, etc.), `clisesh` aggregates all your active and historical sessions in one place, lets you instantly search through them with AI-generated task summaries, and seamlessly resumes your workflow with a single keystroke.
+English | [简体中文](README.zh-CN.md)
+
+`clisesh` is a terminal UI designed to help developers **quickly find and restore previous agent CLI working environments**. If you frequently juggle multiple long-running tasks across different AI agent CLIs (Kiro, Antigravity, Claude Code, Codex, OpenCode, etc.), `clisesh` aggregates all your active and historical sessions in one place, lets you instantly search through them with AI-generated task summaries, and seamlessly resumes your workflow with a single keystroke.
+
+By fully unlocking the value of historical sessions, `clisesh` eliminates redundant prompt context setup, boosting development efficiency while significantly reducing token consumption.
+
+![clisesh TUI](images/main_tui.png)
 
 ## Features
 
-- **Interactive TUI (Bubble Tea)**: Browse sessions with AI-generated descriptions, human-readable relative ages, working directory accents, and real-time filtering.
-- **Manual Description Editing**: Press `m` on any session to manually edit, customize, or override its description directly in a modal dialog. Persisted immediately to disk cache.
-- **Multiple Providers Behind One Interface**: Aggregates sessions across **Kiro**, **Antigravity (`agy`)**, **Claude Code**, **OpenAI Codex**, and **OpenCode** in a unified, newest-first view.
-- **Capability-Aware UI**: Automatically adapts hotkeys and visible hints based on what the active provider supports (`HasTitle`, `CanResume`, `CanDelete`, `CascadeDelete`, `ProvidesPrompts`).
-- **Active Session Safety**: Live lock detection (`●`) prevents accidental deletion of running sessions across all providers (skips active sessions in batch deletes).
-- **Branded & High-Contrast Theming**:
-  - Provider signature badges (`AGY` blue, `KIR` purple, `CLD` terracotta orange, `CDX` mint green, etc.).
-  - Full row highlight inheritance: active lock and brand badges retain signature colors without breaking cursor/marked background bars.
-  - Fully customizable via semantic color roles and per-provider overrides.
-- **Worker Pool & Streaming TUI Updates**:
-  - Concurrency pool sized to `batch_size` (default: 5 concurrent workers).
-  - Fine-grained 1-by-1 streaming: as soon as any single session finishes, its row updates immediately and the next queued session is automatically promoted to `Summarizing…`.
-  - Dynamic status bar shows active in-flight count, queue length, and progress.
-- **API Rate Limiting (RPM Control)**:
-  - Enforces strict maximum requests-per-minute limits over a rolling 60-second sliding window for HTTP LLM backends.
-  - Configurable globally or per-backend (`rpm = 30`), via env (`CLISESH_SUMMARIZER_RPM`), or via `--rpm` flag.
-- **Configurable Smart Summarization**:
-  - **Head + Tail Selection**: Automatically extracts initial goal turns (head) and latest progress turns (tail), skipping repetitive middle debugging cycles.
-  - **Code Noise Scrubbing**: Strips large markdown code fences (` ```...``` ` -> `[code]`) and caps single prompts to keep input concise and tokens low (~60% token reduction).
-  - **Subprocess & LLM Backends**: CLI subprocesses (`kiro-cli`, `agy`) or HTTP APIs (OpenAI, Ollama, DeepSeek, GLM, etc.).
-- **Debounced & Resilient Lifecycle**:
-  - **Failure Preservation**: If re-summarization fails, existing descriptions are preserved and restored rather than overwritten with placeholder or `(no description)`.
-  - In-flight summary deduplication prevents duplicate runs on repeated keypresses.
-  - Safe concurrent deletion: tracks surviving sessions and suppresses stale overwrites.
-  - Scrollable error dialog modal (`e`) for detailed failure inspection.
-- **Layered Configuration**: CLI flags > environment variables (`CLISESH_*`) > TOML config file > defaults.
+- **Unified Session Hub**: Aggregates sessions across **Kiro**, **Antigravity (`agy`)**, **Claude Code**, **OpenAI Codex**, and **OpenCode** in a single, newest-first view.
+- **Smart AI Summaries**: Automatically generates concise task summaries using your preferred local CLI or cloud LLM backend. Press `m` on any session to manually edit, customize, or override descriptions on the fly.
+- **One-Key Resume**: Select any session and press `Enter` to seamlessly take over and restore the CLI environment right where you left off.
+- **Active Session Safety**: Automatically detects active running sessions with a lock indicator (`●`) and protects them against accidental deletion.
+- **Real-Time Filtering & Batch Operations**: Quick search across titles, descriptions, and session IDs with `/`. Multi-select sessions with `Space` for batch operations.
 
-## Install
+## Supported Providers
+
+`clisesh` discovers and aggregates installed agent CLIs automatically (`provider = "all"`).
+
+| Provider | ID | Resume Command | Active Protection |
+| :--- | :--- | :--- | :--- |
+| **Kiro** | `kiro` | `kiro-cli chat --resume-id <id>` | ✅ Auto-detected (`●`) |
+| **Antigravity** | `antigravity` / `agy` | `agy --conversation <id>` | ✅ Auto-detected (`●`) |
+| **Claude Code** | `claude` | `claude --resume <id>` | ✅ Auto-detected (`●`) |
+| **OpenAI Codex** | `codex` | `codex resume <id>` | ✅ Auto-detected (`●`) |
+| **OpenCode** | `opencode` | `opencode --session <id>` | ✅ Auto-detected (`●`) |
+
+> You can launch `clisesh` for a specific provider using `--provider <id>` or by setting `provider = "..."` in the configuration file.
+
+## Installation
 
 ### Download Pre-built Binaries (Recommended)
 
@@ -51,114 +50,66 @@ sudo mv clisesh /usr/local/bin/
 
 ### Build from Source
 
+Requires Go 1.22+.
+
 ```bash
 git clone https://github.com/semigodking/clisesh
 cd clisesh
 make build          # produces bin/clisesh (static binary)
 ```
 
-## Usage
+## Quick Start & Usage
 
 ```bash
-clisesh                       # launch the TUI with the configured provider (default: all)
-clisesh tui --provider kiro   # launch the TUI for a specific provider
-clisesh list --provider all   # list sessions across all providers (non-interactive)
-clisesh summarize [id...]     # generate & cache descriptions
-clisesh providers             # list available providers (kiro, antigravity, claude, codex, opencode)
-clisesh theme list            # list color themes
-clisesh theme preview gray    # preview a theme's color roles
-clisesh cache stats           # show cached description counts
-clisesh config print          # show effective configuration
-clisesh config init           # write a default config file (--force to overwrite)
-clisesh version               # print version
-clisesh help                  # full usage
+clisesh                       # Launch TUI aggregating all providers (default)
+clisesh tui --provider kiro   # Launch TUI for a specific provider
+clisesh list --provider all   # List sessions (non-interactive, scriptable)
+clisesh summarize [id...]     # Pre-generate summaries in background
+clisesh config init           # Generate default configuration file (~/.config/clisesh/config.toml)
+clisesh version               # Print version
 ```
 
-### Keyboard Shortcuts in TUI
+### Keyboard Shortcuts
 
-| Key | Action | Note |
+| Key | Action | Description |
 | :--- | :--- | :--- |
-| `↑` / `k`, `↓` / `j` | Move cursor | Wraps or clamps within list bounds |
-| `g` / `home`, `G` / `end` | Jump to top / bottom | Quick navigation |
-| `pgup` / `pgdown` | Page up / down | Fast scrolling |
-| `space` | Toggle mark | Multi-select sessions |
-| `enter` | Resume session | Replaces process with target CLI (`kiro-cli`, `agy`, `claude`, `codex`, `opencode`) |
-| `m` | Edit description | Manually edits description in a modal dialog and saves to cache |
-| `r` | Re-summarize | Queues selected (or cursor) session for background summarization |
-| `d` | Delete session | Prompts for confirmation; active sessions (`●`) are protected |
-| `i` | Session info | Scrollable popup displaying ID, provider, age, CWD, and parent |
-| `e` | View error | Opens scrollable dialog when summarization fails |
-| `/` | Filter | Real-time filter across title, description, and ID (`esc` clears) |
-| `q` / `ctrl+c` | Quit | Gracefully cancels background workers and exits |
+| `↑` / `k`, `↓` / `j` | Navigate | Move cursor up / down |
+| `g` / `home`, `G` / `end` | Jump | Move to top / bottom of list |
+| `pgup` / `pgdown` | Scroll | Page up / down |
+| `space` | Mark | Toggle multi-selection for batch operations |
+| `enter` | Resume | Resume selected session in its agent CLI |
+| `m` | Edit | Manually edit description in a modal dialog |
+| `r` | Re-summarize | Queue selected session(s) for re-summarization |
+| `d` | Delete | Delete session (active `●` sessions are protected) |
+| `i` | Info | View session details (ID, age, CWD, provider) |
+| `e` | Error | View detailed error logs if summarization fails |
+| `/` | Filter | Search across titles, descriptions, and IDs (`esc` to cancel) |
+| `q` / `ctrl+c` | Quit | Exit clisesh |
 
----
+## Configuration
 
-### Providers
+`clisesh` works out of the box with zero configuration. To customize its behavior, generate a configuration file:
 
-`clisesh` aggregates all installed agent CLIs by default (`provider = "all"`). Each row displays an active lock glyph (`●`), multi-select mark (`✓`), 3-letter brand badge, relative age, short ID, and description:
+```bash
+clisesh config init
+```
 
-| Provider | ID | Default Directory | Active Lock Detection | Resume Command |
-| :--- | :--- | :--- | :--- | :--- |
-| **Kiro** | `kiro` | `~/.kiro/sessions/cli/` | `<uuid>.lock` existence | `kiro-cli chat --resume-id <id>` |
-| **Antigravity** | `antigravity` / `agy` | `~/.gemini/antigravity-cli/brain/` | `flock` on `presence/<uuid>.lock` | `agy --conversation <id>` |
-| **Claude Code** | `claude` | `~/.claude/projects/` | PID check in `~/.claude/sessions/` | `claude --resume <id>` |
-| **OpenAI Codex** | `codex` | `~/.codex/sessions/` | Active process & session rollout check | `codex resume <id>` |
-| **OpenCode** | `opencode` | `~/.local/share/opencode/` + service | Active sessions via `/api/session/active` | `opencode --session <id>` |
+Configuration is loaded from `~/.config/clisesh/config.toml` (or `$XDG_CONFIG_HOME/clisesh/config.toml`).
 
-Select `all` (default) or a specific provider via config (`provider = "..."`), environment variable (`CLISESH_PROVIDER=...`), or `--provider <name>`.
-
----
-
-### Theming & Colors
-
-Themes map semantic roles onto Lipgloss styles. Shipped themes: `default`, `gray`, `high-contrast`, `256`.
-
-You can customize individual role colors or provider badge colors under `[theme_overrides]` in `config.toml`:
+### Example Configuration
 
 ```toml
+# Active provider: "all" (default), "kiro", "antigravity", "claude", "codex", or "opencode"
+provider = "all"
+
+# Color theme: "default", "gray", "high-contrast", or "256"
 theme = "default"
 
-[theme_overrides]
-cursor_fg = "black"              # High-contrast text on highlight
-cursor_bg = "yellow"             # Highlight bar color
-marked_fg = "black"              # Selected text color
-marked_bg = "magenta"            # Selected row color
-lock_fg = "green"                # Active session lock glyph (●)
-footer_fg = "black"              # Footer text foreground color
-footer_bg = "white"              # Footer background color
-key_fg = "white"                 # Key label / shortcut badges foreground color
-key_bg = "black"                 # Key label / shortcut badges background color
-
-# Custom provider badge colors
-provider_antigravity_fg = "brightblue"
-provider_kiro_fg = "magenta"
-provider_claude_fg = "brightred"
-provider_codex_fg = "green"
-```
-
----
-
-### Summarization Configuration
-
-Configure how sessions are summarized under `[summarizer]` in `config.toml`:
-
-```toml
 [summarizer]
-backend = "subprocess.kiro"      # or "subprocess.agy", "llm.openai", "llm.deepseek", etc.
-model = "qwen3-coder-next"
-title_len = 80
-timeout_sec = 60
-
-# --- Worker Pool & Rate Limiting Controls ---
-batch_size = 5                   # Concurrent worker pool capacity (default: 5)
-rpm = 30                         # Max API requests per minute for LLM backends (0 = unlimited)
-
-# --- Prompt Extraction Controls ---
-max_prompts = 10                 # Max user prompts extracted from session history (default: 10)
-head_prompts = 2                 # Number of initial prompts to capture task intent (default: 2)
-tail_prompts = 1                 # Number of latest prompts to capture final outcome (default: 1)
-prompt_max_chars = 400           # Character limit per individual prompt (default: 400)
-max_chars = 1500                 # Character limit per session in combined prompt (default: 1500)
+# Subprocess CLI backend (e.g. "subprocess.kiro", "subprocess.agy")
+# or HTTP LLM backend (e.g. "llm.openai", "llm.deepseek", "llm.glm")
+backend = "subprocess.kiro"
+batch_size = 5                   # Concurrent background summarization workers
 
 [summarizer.subprocess.kiro]
 command = "kiro-cli"
@@ -168,51 +119,22 @@ args = ["chat", "--no-interactive", "--model", "{model}", "--effort", "low", "--
 base_url = "https://api.openai.com/v1"
 api_key = "${OPENAI_API_KEY}"
 model = "gpt-4o-mini"
-temperature = 0.2
-timeout_sec = 60
-rpm = 60                         # Per-backend RPM override
+rpm = 60                         # Max requests per minute limit
 ```
 
-All summarizer parameters can also be configured via environment variables:
-- `CLISESH_SUMMARIZER_BACKEND`
-- `CLISESH_SUMMARIZER_MODEL`
-- `CLISESH_SUMMARIZER_BATCH_SIZE`
-- `CLISESH_SUMMARIZER_RPM`
-- `CLISESH_SUMMARIZER_MAX_PROMPTS`
-- `CLISESH_SUMMARIZER_HEAD_PROMPTS`
-- `CLISESH_SUMMARIZER_TAIL_PROMPTS`
+> See [`configs/config.example.toml`](configs/config.example.toml) for all available options, including custom color overrides, token extraction settings, and LLM backends.
 
-## Adding a provider
+## Documentation & Development
 
-1. Create `internal/provider/<name>/<name>.go` implementing
-   `domain.SessionProvider` and returning appropriate `Capabilities`.
-2. Register it in an `init()` via `provider.Register("<name>", factory)`.
-3. Add a blank import in `cmd/clisesh/main.go` so the init runs.
-4. Document its storage format and capabilities in
-   [`docs/providers/capability-matrix.md`](docs/providers/capability-matrix.md)
-   and a `docs/specs/00N-provider-<name>.md`.
-
-No changes to the domain model, TUI, config, theming, cache, or summarizer are
-required — see [ADR 0002](docs/adr/0002-provider-capability-flags.md).
-
-
-## Documentation
-
-- [Design overview](docs/DESIGN.md)
-- [Specs](docs/specs/) — one numbered spec per component
-- [Provider capability matrix](docs/providers/capability-matrix.md)
-- [Architecture Decision Records](docs/adr/)
-
-## Development
+- [Design Overview](docs/DESIGN.md) — Architecture and component design
+- [Provider Capability Matrix](docs/providers/capability-matrix.md) — On-disk layouts and capabilities
+- [Component Specifications](docs/specs/) — Detailed specs per module
 
 ```bash
-make test     # run all tests
-make lint     # go vet + gofmt check
-make cover    # coverage summary
-make build    # static binary
+make test     # Run unit tests
+make lint     # Run code formatting and vet checks
+make dist     # Cross-compile release archives for Linux & macOS
 ```
-
-Requires Go 1.22+.
 
 ## License
 

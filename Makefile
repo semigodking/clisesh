@@ -62,6 +62,7 @@ dist: ## Cross-compile and package release tarballs into dist/
 		mkdir -p "dist/$${pkg_name}"; \
 		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} go build -trimpath -ldflags "$(LDFLAGS)" -o "dist/$${pkg_name}/$(BINARY)" $(CMD) || exit 1; \
 		cp README.md "dist/$${pkg_name}/" 2>/dev/null || true; \
+		cp README.zh-CN.md "dist/$${pkg_name}/" 2>/dev/null || true; \
 		tar -czf "dist/$${pkg_name}.tar.gz" -C dist "$${pkg_name}"; \
 		rm -rf "dist/$${pkg_name}"; \
 	done

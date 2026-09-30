@@ -4,7 +4,7 @@
 
 `clisesh` browses and manages agent CLI conversation sessions across multiple
 providers. The central design goal is **extensibility**: adding a new agent
-CLI (Kiro, Antigravity, Codex, Claude Code, ...) must require only a new
+CLI (Kiro, Antigravity, Codex, Claude Code, OpenCode, ...) must require only a new
 provider implementation — no changes to the UI, configuration, theming,
 caching, or summarization layers.
 
@@ -15,7 +15,7 @@ summarizers) depend on the domain abstractions, never the reverse.
 
 ```
                  ┌───────────────────────────┐
-                 │        cmd/clisesh         │  wiring / CLI entrypoint
+                 │        cmd/clisesh        │  wiring / CLI entrypoint
                  └──────────────┬────────────┘
                                 │
         ┌───────────────┬───────┴───────┬────────────────┐
@@ -31,10 +31,10 @@ summarizers) depend on the domain abstractions, never the reverse.
                         │             │  SessionProvider (interface)
                         └──────┬──────┘
                                ▲
-              ┌────────────────┴─────────────────┐
-              │             provider             │
-              │  registry → kiro, antigravity    │
-              └──────────────────────────────────┘
+              ┌────────────────┴───────────────────────────────┐
+              │                   provider                     │
+              │  registry → kiro, agy, claude, codex, opencode │
+              └────────────────────────────────────────────────┘
 ```
 
 ### Packages
@@ -69,19 +69,20 @@ type Capabilities struct {
 type SessionProvider interface {
     ID() string
     Capabilities() Capabilities
-    List(ctx) ([]Session, error)
-    UserPrompts(ctx, id string, max int) ([]string, error)
-    Resume(ctx, id string) error
-    Delete(ctx, ids []string) (deleted []string, err error)
-    Children(ctx, id string) ([]string, error)
+    List(ctx context.Context) ([]Session, error)
+    UserPrompts(ctx context.Context, id string, max int) ([]string, error)
+    Resume(ctx context.Context, id string) error
+    ValidateResume(ctx context.Context, id string) error
+    Delete(ctx context.Context, ids []string) (deleted []string, err error)
+    Children(ctx context.Context, id string) ([]string, error)
 }
 ```
 
 ### Why capability flags?
 
 Real agent CLIs store and expose sessions very differently (see
-[capability matrix](providers/capability-matrix.md)). Some have titles (Kiro),
-some don't (Antigravity). Some link subagents (Kiro `parent_session_id`),
+[capability matrix](providers/capability-matrix.md)). Some have titles (Kiro, OpenCode),
+some don't (Antigravity, Claude, Codex). Some link subagents (Kiro `parent_session_id`),
 some don't. Rather than force every provider to fake unsupported features,
 each advertises `Capabilities()` and the UI hides or disables actions
 accordingly. This keeps providers honest and the UI robust.
@@ -123,6 +124,6 @@ invalidate stale entries. Writes are atomic; deleted sessions are purged. See
 
 ## Documentation map
 
-- Per-component specs: [`docs/specs/`](specs/)
+- Per-component specs: [`docs/specs/`](specs/) (Specs 001–013)
 - Decisions: [`docs/adr/`](adr/)
 - Provider formats + capabilities: [`docs/providers/capability-matrix.md`](providers/capability-matrix.md)
