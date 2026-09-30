@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run Tests
+        run: |
+          go test ./...
+
+      - name: Build Matrix & Package
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          DIST_DIR="dist"
+          mkdir -p "${DIST_DIR}"
+
+          TARGETS=(
+            "linux amd64"
+            "linux arm64"
+            "darwin amd64"
+            "darwin arm64"
+          )
+
+          for TARGET in "${TARGETS[@]}"; do
+            set -- $TARGET
+            OS=$1
+            ARCH=$2
+            OUTPUT_NAME="clisesh"
+            ARCHIVE_NAME="clisesh_${VERSION}_${OS}_${ARCH}"
+            BUILD_TMP="build_tmp/${ARCHIVE_NAME}"
+
+            echo "==> Building ${OS}/${ARCH}..."
+            mkdir -p "${BUILD_TMP}"
+            CGO_ENABLED=0 GOOS=${OS} GOARCH=${ARCH} go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "${BUILD_TMP}/${OUTPUT_NAME}" \
+              ./cmd/clisesh
+
+            cp README.md "${BUILD_TMP}/" 2>/dev/null || true
+
+            tar -czf "${DIST_DIR}/${ARCHIVE_NAME}.tar.gz" -C "build_tmp" "${ARCHIVE_NAME}"
+            rm -rf "build_tmp"
+          done
+
+          cd "${DIST_DIR}"
+          sha256sum clisesh_*.tar.gz > checksums.txt
+          cd ..
+
+          echo "Dist artifacts ready:"
+          ls -lh "${DIST_DIR}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

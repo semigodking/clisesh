@@ -1,5 +1,9 @@
 # clisesh
 
+[![CI](https://github.com/semigodking/clisesh/actions/workflows/ci.yml/badge.svg)](https://github.com/semigodking/clisesh/actions/workflows/ci.yml)
+[![Release](https://github.com/semigodking/clisesh/actions/workflows/release.yml/badge.svg)](https://github.com/semigodking/clisesh/actions/workflows/release.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/semigodking/clisesh?include_prereleases&style=flat-square)](https://github.com/semigodking/clisesh/releases)
+
 `clisesh` is a terminal UI designed to help developers **quickly find and restore previous agent CLI working environments**. If you frequently juggle multiple long-running tasks across different AI agent CLIs (Kiro, Antigravity, Claude Code, Codex, etc.), `clisesh` aggregates all your active and historical sessions in one place, lets you instantly search through them with AI-generated task summaries, and seamlessly resumes your workflow with a single keystroke.
 
 ## Features
@@ -32,6 +36,20 @@
 - **Layered Configuration**: CLI flags > environment variables (`CLISESH_*`) > TOML config file > defaults.
 
 ## Install
+
+### Download Pre-built Binaries (Recommended)
+
+Download the archive for your operating system and architecture directly from the [GitHub Releases](https://github.com/semigodking/clisesh/releases) page:
+- **Linux**: `x86_64` (amd64) or `arm64`
+- **macOS**: Apple Silicon (`arm64`) or Intel (`amd64`)
+
+Extract the archive and move `clisesh` into your `PATH`:
+```bash
+tar -xzf clisesh_*.tar.gz
+sudo mv clisesh /usr/local/bin/
+```
+
+### Build from Source
 
 ```bash
 git clone https://github.com/semigodking/clisesh

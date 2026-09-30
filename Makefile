@@ -50,6 +50,26 @@ fmt: ## Format all Go source
 tidy: ## Tidy go.mod/go.sum
 	go mod tidy
 
+.PHONY: dist
+dist: ## Cross-compile and package release tarballs into dist/
+	@rm -rf dist
+	@mkdir -p dist
+	@for target in "linux amd64" "linux arm64" "darwin amd64" "darwin arm64"; do \
+		set -- $$target; \
+		os=$$1; arch=$$2; \
+		pkg_name="$(BINARY)_$(VERSION)_$${os}_$${arch}"; \
+		echo "Building $${os}/$${arch}..."; \
+		mkdir -p "dist/$${pkg_name}"; \
+		CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} go build -trimpath -ldflags "$(LDFLAGS)" -o "dist/$${pkg_name}/$(BINARY)" $(CMD) || exit 1; \
+		cp README.md "dist/$${pkg_name}/" 2>/dev/null || true; \
+		tar -czf "dist/$${pkg_name}.tar.gz" -C dist "$${pkg_name}"; \
+		rm -rf "dist/$${pkg_name}"; \
+	done
+	@cd dist && sha256sum clisesh_*.tar.gz > checksums.txt
+	@echo "Dist packages created in dist/:"
+	@ls -la dist/
+
 .PHONY: clean
 clean: ## Remove build artifacts
-	rm -rf $(BIN_DIR)
+	rm -rf $(BIN_DIR) dist
+
