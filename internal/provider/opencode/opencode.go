@@ -140,19 +140,27 @@ type apiActiveSessionResponse struct {
 // List returns all top-level OpenCode sessions, newest first.
 func (p *Provider) List(ctx context.Context) ([]domain.Session, error) {
 	serviceURL, err := p.getServiceURL(ctx)
-	if err != nil {
-		// Fallback to CLI list for current directory project if service not reachable
-		return p.listFromCLI(ctx)
+	if err == nil {
+		if cfg, err := p.readServiceConfig(); err == nil {
+			if sessions, err := p.listFromAPI(ctx, serviceURL, cfg.Password); err == nil && len(sessions) > 0 {
+				return sessions, nil
+			}
+		}
 	}
 
-	cfg, err := p.readServiceConfig()
-	if err != nil {
-		return p.listFromCLI(ctx)
+	// Fallback 1: Query global opencode.db directly (works from any directory, service running or stopped)
+	if sessions, err := p.listFromDB(ctx); err == nil && len(sessions) > 0 {
+		return sessions, nil
 	}
 
+	// Fallback 2: Local CLI list (scoped to current working directory)
+	return p.listFromCLI(ctx)
+}
+
+func (p *Provider) listFromAPI(ctx context.Context, serviceURL, password string) ([]domain.Session, error) {
 	// 1. Fetch active sessions map for lock checking
 	activeMap := map[string]bool{}
-	if activeResp, err := p.fetchActiveSessions(ctx, serviceURL, cfg.Password); err == nil {
+	if activeResp, err := p.fetchActiveSessions(ctx, serviceURL, password); err == nil {
 		for id := range activeResp.Data {
 			activeMap[id] = true
 		}
@@ -163,16 +171,16 @@ func (p *Provider) List(ctx context.Context) ([]domain.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.SetBasicAuth("opencode", cfg.Password)
+	req.SetBasicAuth("opencode", password)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return p.listFromCLI(ctx)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return p.listFromCLI(ctx)
+		return nil, fmt.Errorf("session api returned status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -216,6 +224,107 @@ func (p *Provider) List(ctx context.Context) ([]domain.Session, error) {
 	})
 
 	return out, nil
+}
+
+// dbSessionItem models session rows queried from opencode.db.
+type dbSessionItem struct {
+	ID        string `json:"id"`
+	ParentID  string `json:"parent_id"`
+	Directory string `json:"directory"`
+	Title     string `json:"title"`
+	Created   int64  `json:"created"`
+	Updated   int64  `json:"updated"`
+}
+
+// listFromDB queries the SQLite database directly across all projects.
+func (p *Provider) listFromDB(ctx context.Context) ([]domain.Session, error) {
+	dbPath := filepath.Join(p.shareDir, "opencode.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, err
+	}
+
+	pyScript := `
+import sqlite3, os, sys, json
+
+db = sys.argv[1]
+if not os.path.exists(db):
+    print(json.dumps([]))
+    sys.exit(0)
+
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('session_v2', 'session')")
+    tables = [r[0] for r in cur.fetchall()]
+    table = 'session_v2' if 'session_v2' in tables else ('session' if 'session' in tables else None)
+    if not table:
+        print(json.dumps([]))
+        sys.exit(0)
+
+    cur.execute(f"PRAGMA table_info({table})")
+    cols = {r[1] for r in cur.fetchall()}
+    archived_clause = "WHERE (time_archived IS NULL OR time_archived = 0)" if 'time_archived' in cols else ""
+
+    query = f"""
+        SELECT id, COALESCE(parent_id, ''), COALESCE(directory, ''), COALESCE(title, ''), time_created, time_updated
+        FROM {table}
+        {archived_clause}
+        ORDER BY time_updated DESC
+    """
+    cur.execute(query)
+    out = []
+    for r in cur.fetchall():
+        out.append({
+            'id': r[0],
+            'parent_id': r[1],
+            'directory': r[2],
+            'title': r[3],
+            'created': r[4],
+            'updated': r[5],
+        })
+    print(json.dumps(out))
+except Exception:
+    print(json.dumps([]))
+`
+	cmd := exec.CommandContext(ctx, "python3", "-c", pyScript, dbPath)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var items []dbSessionItem
+	if err := json.Unmarshal(out, &items); err != nil {
+		return nil, err
+	}
+
+	var sessions []domain.Session
+	for _, it := range items {
+		if !sessionIDRe.MatchString(it.ID) {
+			continue
+		}
+		// Subagent child sessions are skipped in top-level List
+		if it.ParentID != "" {
+			continue
+		}
+		updatedAt := time.UnixMilli(it.Updated)
+		if it.Updated == 0 && it.Created > 0 {
+			updatedAt = time.UnixMilli(it.Created)
+		}
+		sessions = append(sessions, domain.Session{
+			ID:         it.ID,
+			ProviderID: providerID,
+			Title:      it.Title,
+			CWD:        it.Directory,
+			UpdatedAt:  updatedAt,
+			ParentID:   it.ParentID,
+		})
+	}
+
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
+	})
+
+	return sessions, nil
 }
 
 func (p *Provider) fetchActiveSessions(ctx context.Context, serviceURL, password string) (*apiActiveSessionResponse, error) {
@@ -285,19 +394,24 @@ func (p *Provider) Children(ctx context.Context, parentID string) ([]string, err
 	}
 
 	serviceURL, err := p.getServiceURL(ctx)
-	if err != nil {
-		return nil, nil
-	}
-	cfg, err := p.readServiceConfig()
-	if err != nil {
-		return nil, nil
+	if err == nil {
+		if cfg, err := p.readServiceConfig(); err == nil {
+			if childIDs, err := p.childrenFromAPI(ctx, serviceURL, cfg.Password, parentID); err == nil && len(childIDs) > 0 {
+				return childIDs, nil
+			}
+		}
 	}
 
+	// Fallback to SQLite DB
+	return p.childrenFromDB(ctx, parentID)
+}
+
+func (p *Provider) childrenFromAPI(ctx context.Context, serviceURL, password, parentID string) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serviceURL+"/api/session", nil)
 	if err != nil {
 		return nil, err
 	}
-	req.SetBasicAuth("opencode", cfg.Password)
+	req.SetBasicAuth("opencode", password)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -306,7 +420,7 @@ func (p *Provider) Children(ctx context.Context, parentID string) ([]string, err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil
+		return nil, fmt.Errorf("status: %d", resp.StatusCode)
 	}
 
 	var sessionResp apiSessionResponse
@@ -323,19 +437,119 @@ func (p *Provider) Children(ctx context.Context, parentID string) ([]string, err
 	return childIDs, nil
 }
 
+func (p *Provider) childrenFromDB(ctx context.Context, parentID string) ([]string, error) {
+	dbPath := filepath.Join(p.shareDir, "opencode.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, nil
+	}
+
+	pyScript := `
+import sqlite3, os, sys, json
+
+db, parent_id = sys.argv[1], sys.argv[2]
+if not os.path.exists(db):
+    print(json.dumps([]))
+    sys.exit(0)
+
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('session_v2', 'session')")
+    tables = [r[0] for r in cur.fetchall()]
+    table = 'session_v2' if 'session_v2' in tables else ('session' if 'session' in tables else None)
+    if not table:
+        print(json.dumps([]))
+        sys.exit(0)
+
+    cur.execute(f"SELECT id FROM {table} WHERE parent_id = ?", (parent_id,))
+    out = [r[0] for r in cur.fetchall()]
+    print(json.dumps(out))
+except Exception:
+    print(json.dumps([]))
+`
+	cmd := exec.CommandContext(ctx, "python3", "-c", pyScript, dbPath, parentID)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+	var childIDs []string
+	_ = json.Unmarshal(out, &childIDs)
+	return childIDs, nil
+}
+
 // UserPrompts extracts up to max user prompts from the session messages.
 func (p *Provider) UserPrompts(ctx context.Context, id string, max int) ([]string, error) {
 	if !sessionIDRe.MatchString(id) {
 		return nil, nil
 	}
 
-	// Try service API first
+	// 1. Try service API first
 	if prompts, err := p.userPromptsFromAPI(ctx, id, max); err == nil && len(prompts) > 0 {
 		return prompts, nil
 	}
 
-	// Fallback to CLI export
+	// 2. Try direct SQLite DB read across all projects
+	if prompts, err := p.userPromptsFromDB(ctx, id, max); err == nil && len(prompts) > 0 {
+		return prompts, nil
+	}
+
+	// 3. Fallback to CLI export
 	return p.userPromptsFromCLI(ctx, id, max)
+}
+
+func (p *Provider) userPromptsFromDB(ctx context.Context, id string, max int) ([]string, error) {
+	dbPath := filepath.Join(p.shareDir, "opencode.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, err
+	}
+
+	pyScript := `
+import sqlite3, os, sys, json
+
+db, session_id = sys.argv[1], sys.argv[2]
+if not os.path.exists(db):
+    print(json.dumps([]))
+    sys.exit(0)
+
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = 'session_message'")
+    if not cur.fetchone():
+        print(json.dumps([]))
+        sys.exit(0)
+
+    cur.execute("""
+        SELECT data FROM session_message
+        WHERE session_id = ? AND type = 'user'
+        ORDER BY seq ASC, time_created ASC
+    """, (session_id,))
+    prompts = []
+    for r in cur.fetchall():
+        try:
+            d = json.loads(r[0])
+            txt = d.get('text', '').strip()
+            if txt:
+                prompts.append(txt)
+        except Exception:
+            pass
+    print(json.dumps(prompts))
+except Exception:
+    print(json.dumps([]))
+`
+	cmd := exec.CommandContext(ctx, "python3", "-c", pyScript, dbPath, id)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var allPrompts []string
+	if err := json.Unmarshal(out, &allPrompts); err != nil {
+		return nil, err
+	}
+	if max > 0 && len(allPrompts) > max {
+		return allPrompts[:max], nil
+	}
+	return allPrompts, nil
 }
 
 func (p *Provider) userPromptsFromAPI(ctx context.Context, id string, max int) ([]string, error) {

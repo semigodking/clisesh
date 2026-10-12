@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -219,5 +220,133 @@ func TestSessionIDRegex(t *testing.T) {
 		if sessionIDRe.MatchString(inv) {
 			t.Errorf("expected %q to be invalid", inv)
 		}
+	}
+}
+
+func TestDBFallbacks(t *testing.T) {
+	tmpDir := t.TempDir()
+	shareDir := filepath.Join(tmpDir, "share")
+	if err := os.MkdirAll(shareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	dbPath := filepath.Join(shareDir, "opencode.db")
+	createScript := `
+import sqlite3, sys
+
+db = sys.argv[1]
+conn = sqlite3.connect(db)
+cur = conn.cursor()
+
+cur.execute("""
+CREATE TABLE session_v2 (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT,
+    directory TEXT,
+    title TEXT,
+    time_created INTEGER,
+    time_updated INTEGER,
+    time_archived INTEGER
+)
+""")
+
+cur.execute("""
+CREATE TABLE session_message (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    type TEXT,
+    seq INTEGER,
+    time_created INTEGER,
+    data TEXT
+)
+""")
+
+# Insert root session 1
+cur.execute("""
+INSERT INTO session_v2 (id, parent_id, directory, title, time_created, time_updated, time_archived)
+VALUES ('ses_root001', NULL, '/home/user/projectA', 'Project A Root', 1700000000000, 1700000010000, 0)
+""")
+
+# Insert root session 2
+cur.execute("""
+INSERT INTO session_v2 (id, parent_id, directory, title, time_created, time_updated, time_archived)
+VALUES ('ses_root002', NULL, '/home/user/projectB', 'Project B Root', 1700000020000, 1700000030000, 0)
+""")
+
+# Insert child session of root001
+cur.execute("""
+INSERT INTO session_v2 (id, parent_id, directory, title, time_created, time_updated, time_archived)
+VALUES ('ses_child001', 'ses_root001', '/home/user/projectA', 'Subtask', 1700000040000, 1700000050000, 0)
+""")
+
+# Insert messages for root001
+cur.execute("""
+INSERT INTO session_message (id, session_id, type, seq, time_created, data)
+VALUES ('msg_01', 'ses_root001', 'user', 1, 1700000001000, '{"text": "First user prompt"}')
+""")
+cur.execute("""
+INSERT INTO session_message (id, session_id, type, seq, time_created, data)
+VALUES ('msg_02', 'ses_root001', 'assistant', 2, 1700000002000, '{"text": "Assistant reply"}')
+""")
+cur.execute("""
+INSERT INTO session_message (id, session_id, type, seq, time_created, data)
+VALUES ('msg_03', 'ses_root001', 'user', 3, 1700000003000, '{"text": "Second user prompt"}')
+""")
+
+conn.commit()
+`
+	cmd := os.Getenv("SHELL")
+	_ = cmd
+	pyCmd := exec.Command("python3", "-c", createScript, dbPath)
+	if err := pyCmd.Run(); err != nil {
+		t.Skip("skipping db test, python3 or sqlite3 unavailable:", err)
+	}
+
+	p := &Provider{
+		configDir: filepath.Join(tmpDir, "config"),
+		shareDir:  shareDir,
+		client:    &http.Client{},
+	}
+
+	// 1. Test listFromDB: should return the 2 top-level root sessions, sorted newest first
+	sessions, err := p.listFromDB(context.Background())
+	if err != nil {
+		t.Fatalf("listFromDB failed: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 root sessions, got %d", len(sessions))
+	}
+	if sessions[0].ID != "ses_root002" {
+		t.Errorf("expected newest session ses_root002 first, got %s", sessions[0].ID)
+	}
+	if sessions[0].CWD != "/home/user/projectB" {
+		t.Errorf("expected CWD /home/user/projectB, got %s", sessions[0].CWD)
+	}
+	if sessions[1].ID != "ses_root001" {
+		t.Errorf("expected ses_root001 second, got %s", sessions[1].ID)
+	}
+	if sessions[1].Title != "Project A Root" {
+		t.Errorf("expected title Project A Root, got %s", sessions[1].Title)
+	}
+
+	// 2. Test childrenFromDB: should find ses_child001
+	children, err := p.childrenFromDB(context.Background(), "ses_root001")
+	if err != nil {
+		t.Fatalf("childrenFromDB failed: %v", err)
+	}
+	if len(children) != 1 || children[0] != "ses_child001" {
+		t.Fatalf("expected child ses_child001, got %v", children)
+	}
+
+	// 3. Test userPromptsFromDB: should extract only user prompts
+	prompts, err := p.userPromptsFromDB(context.Background(), "ses_root001", 10)
+	if err != nil {
+		t.Fatalf("userPromptsFromDB failed: %v", err)
+	}
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 user prompts, got %d", len(prompts))
+	}
+	if prompts[0] != "First user prompt" || prompts[1] != "Second user prompt" {
+		t.Errorf("unexpected prompts: %v", prompts)
 	}
 }

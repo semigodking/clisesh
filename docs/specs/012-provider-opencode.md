@@ -30,14 +30,18 @@ ProvidesPrompts: true    // extracts user messages via API or DB
 ## Behavior
 
 ### List
-- Queries local service endpoint `GET /api/session` or reads `opencode.db`.
-- Retrieves session metadata: ID, title, CWD, updated timestamp, and parent ID.
+- Queries local service endpoint `GET /api/session`.
+- If the HTTP service is unavailable, falls back directly to read-only queries against `~/.local/share/opencode/opencode.db` (`session_v2` / `session` tables), enabling fast cross-project discovery from any directory without requiring the background service to be running.
+- If both the service and database are unavailable, falls back to `opencode session list --format json`.
+- Retrieves session metadata: ID, title, CWD (directory), updated timestamp, and parent ID.
 - Checks active sessions via `/api/session/active` to set `Locked = true`.
 - In TUI list rendering, the `ses_` prefix is trimmed from `ShortID()` for a cleaner interface.
 - Returns sessions sorted newest-first.
 
 ### UserPrompts(id, max)
-- Fetches transcript messages via `GET /api/session/:id/message` or fallback `opencode session export <id>`.
+- Fetches transcript messages via `GET /api/session/:id/message`.
+- If HTTP service is unavailable, reads directly from `session_message` table in `opencode.db` (filtering `type = 'user'`).
+- If database read is unavailable, falls back to `opencode session export <id>`.
 - Extracts user turn messages up to `max`.
 
 ### Resume(id)

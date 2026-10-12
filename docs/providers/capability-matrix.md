@@ -14,14 +14,14 @@ with shape/version checks.
 | **Antigravity** (`agy`) | `~/.gemini/antigravity-cli/brain/` | `<uuid>/.system_generated/logs/transcript.jsonl` (dir per convo) | No | transcript entries only    |
 | **Claude Code** (`claude`) | `~/.claude/projects/` (`CLAUDE_CONFIG_DIR`) | `<encoded-cwd>/<uuid>.jsonl` + `~/.claude/sessions/`          | No     | `.jsonl` entries: user prompts, cwd |
 | **OpenAI Codex** (`codex`) | `~/.codex/sessions/` (`CODEX_HOME`)         | `YYYY/MM/DD/rollout-*.jsonl`                                  | No     | `.jsonl` entries: user prompts, cwd |
-| **OpenCode** (`opencode`) | `~/.local/share/opencode/` + `~/.config/opencode/` | Service HTTP API (`/api/session`) + `opencode.db` / CLI | Yes | API / DB: title, cwd, updated_at, parent_id |
+| **OpenCode** (`opencode`) | `~/.local/share/opencode/` + `~/.config/opencode/` | Service HTTP API (`/api/session`) + SQLite `opencode.db` (`session_v2`/`session`) / CLI | Yes | API / DB: title, cwd, updated_at, parent_id |
 
 Prompt extraction:
 - **Kiro**: transcript lines with `"kind":"Prompt"`.
 - **Antigravity**: transcript entries of type `USER_INPUT` (assistant replies are `PLANNER_RESPONSE`).
 - **Claude Code**: transcript entries of type `"user"` with `message.content`.
 - **OpenAI Codex**: rollout entries with `role: "user"` or `type: "user"`.
-- **OpenCode**: message entries of type `"user"` via `/api/session/:id/message` or `opencode session export`.
+- **OpenCode**: message entries of type `"user"` via `/api/session/:id/message`, SQLite `session_message` table, or `opencode session export`.
 
 Active lock detection:
 - **Kiro**: `<uuid>.lock` existence check in the sessions directory.
