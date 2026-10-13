@@ -141,7 +141,7 @@ make dist     # 交叉编译 Linux 与 macOS 全平台发布包
 如果你觉得这个软件对你有帮助，欢迎打赏支持开发。
 
 - ![微信](images/mm_reward_qrcode.png)
-- [Paypal](paypal.me/redsocks2)
+- [paypal.me/redsocks2](https://paypal.me/redsocks2)
 
 ## 开源协议
 

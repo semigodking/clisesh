@@ -141,7 +141,7 @@ make dist     # Cross-compile release archives for Linux & macOS
 If you think this software is helpful, consider to donate.
 
 - ![Weichat](images/mm_reward_qrcode.png)
-- [Paypal](paypal.me/redsocks2)
+- [paypal.me/redsocks2](https://paypal.me/redsocks2)
 
 ## License
 
