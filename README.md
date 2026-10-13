@@ -136,6 +136,13 @@ make lint     # Run code formatting and vet checks
 make dist     # Cross-compile release archives for Linux & macOS
 ```
 
+## Donation
+
+If you think this software is helpful, consider to donate.
+
+- ![Weichat](images/mm_reward_qrcode.png)
+- [Paypal](paypal.me/redsocks2)
+
 ## License
 
 MIT

@@ -136,6 +136,13 @@ make lint     # 运行代码规范检查 (go vet + gofmt)
 make dist     # 交叉编译 Linux 与 macOS 全平台发布包
 ```
 
+## 打赏
+
+如果你觉得这个软件对你有帮助，欢迎打赏支持开发。
+
+- ![微信](images/mm_reward_qrcode.png)
+- [Paypal](paypal.me/redsocks2)
+
 ## 开源协议
 
 MIT
