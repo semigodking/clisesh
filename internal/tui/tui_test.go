@@ -205,6 +205,110 @@ func TestFilterMode(t *testing.T) {
 	}
 }
 
+func TestFilterModeStatusDisplay(t *testing.T) {
+	m, _ := newModel(allCaps())
+	// Set an existing transient status and background summarization status
+	m.status = "summarized 5 session(s)"
+	m.summState.status = "summarizing (1/5): 1 session(s)…"
+
+	// Enter filter mode
+	mm, _ := m.Update(key("/"))
+	m = mm.(Model)
+	if m.mode != modeFilter {
+		t.Fatal("/ should enter filter mode")
+	}
+
+	// Status bar must display filter prompt and cursor, NOT the summarization status
+	status := stripANSI(m.viewStatus(80))
+	if !strings.Contains(status, "Filter: ▌") {
+		t.Errorf("status bar in filter mode should contain 'Filter: ▌', got %q", status)
+	}
+	if strings.Contains(status, "summarized") || strings.Contains(status, "summarizing") {
+		t.Errorf("status bar in filter mode should NOT show background status, got %q", status)
+	}
+
+	// Type query runes
+	for _, ch := range []string{"b", "e", "t", "a"} {
+		mm, _ = m.Update(key(ch))
+		m = mm.(Model)
+	}
+
+	status = stripANSI(m.viewStatus(80))
+	if !strings.Contains(status, "Filter: beta▌") {
+		t.Errorf("status bar after typing 'beta' should contain 'Filter: beta▌', got %q", status)
+	}
+
+	// Backspace once
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = mm.(Model)
+	status = stripANSI(m.viewStatus(80))
+	if !strings.Contains(status, "Filter: bet▌") {
+		t.Errorf("status bar after backspace should contain 'Filter: bet▌', got %q", status)
+	}
+
+	// Enter leaves filter mode
+	mm, _ = m.Update(key("enter"))
+	m = mm.(Model)
+	if m.mode != modeNormal {
+		t.Error("enter should return to modeNormal")
+	}
+	normalStatus := stripANSI(m.viewStatus(80))
+	if strings.Contains(normalStatus, "Filter:") {
+		t.Errorf("normal mode status should not contain 'Filter:', got %q", normalStatus)
+	}
+
+	// Enter filter mode again and press esc to clear
+	mm, _ = m.Update(key("/"))
+	m = mm.(Model)
+	mm, _ = m.Update(key("esc"))
+	m = mm.(Model)
+	if m.mode != modeNormal {
+		t.Error("esc should return to modeNormal")
+	}
+	if m.filter != "" {
+		t.Errorf("esc should clear filter, got %q", m.filter)
+	}
+}
+
+func TestFilterModeCtrlCQuits(t *testing.T) {
+	m, _ := newModel(allCaps())
+	mm, _ := m.Update(key("/"))
+	m = mm.(Model)
+
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = mm.(Model)
+	if !m.quitting {
+		t.Error("ctrl+c in filter mode should set quitting=true")
+	}
+	if cmd == nil {
+		t.Error("ctrl+c in filter mode should return tea.Quit cmd")
+	}
+}
+
+func TestFilterModeNarrowTerminalAndTruncation(t *testing.T) {
+	m, _ := newModel(allCaps())
+	mm, _ := m.Update(key("/"))
+	m = mm.(Model)
+
+	// Type a very long query
+	for _, r := range "very-long-filter-query-that-exceeds-small-width" {
+		mm, _ = m.Update(key(string(r)))
+		m = mm.(Model)
+	}
+
+	for _, w := range []int{20, 30, 40, 80} {
+		status := m.viewStatus(w)
+		if strings.Contains(status, "\n") {
+			t.Errorf("viewStatus at width %d must not contain newline", w)
+		}
+		plain := stripANSI(status)
+		dw := textutil.DisplayWidth(plain)
+		if dw > w {
+			t.Errorf("viewStatus display width %d exceeds terminal width %d: %q", dw, w, plain)
+		}
+	}
+}
+
 func TestDeleteGatedByCapability(t *testing.T) {
 	// Without CanDelete, 'd' must not enter confirm mode.
 	caps := allCaps()

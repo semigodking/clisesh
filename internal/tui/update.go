@@ -212,6 +212,12 @@ func (m Model) handleErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "ctrl+c":
+		if m.cancel != nil {
+			m.cancel()
+		}
+		m.quitting = true
+		return m, tea.Quit
 	case "esc":
 		m.filter = ""
 		m.mode = modeNormal

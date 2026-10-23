@@ -167,6 +167,28 @@ func (m Model) statusText() string {
 	return m.status
 }
 
+func tailByDisplayWidth(s string, maxCols int) string {
+	if maxCols <= 0 {
+		return ""
+	}
+	s = strings.ToValidUTF8(s, "")
+	if textutil.DisplayWidth(s) <= maxCols {
+		return s
+	}
+	runes := []rune(s)
+	used := 0
+	start := len(runes)
+	for i := len(runes) - 1; i >= 0; i-- {
+		cw := textutil.CharWidth(runes[i])
+		if used+cw > maxCols {
+			break
+		}
+		used += cw
+		start = i
+	}
+	return string(runes[start:])
+}
+
 func (m Model) viewStatus(w int) string {
 	f := m.filtered()
 	total := len(f)
@@ -176,7 +198,7 @@ func (m Model) viewStatus(w int) string {
 	}
 	rightText := fmt.Sprintf(" %d/%d ", pos, total)
 
-	isError := m.lastErr != "" && (strings.HasPrefix(m.status, "summarize failed:") || strings.HasPrefix(m.status, "resume failed:"))
+	isError := m.mode != modeFilter && m.lastErr != "" && (strings.HasPrefix(m.status, "summarize failed:") || strings.HasPrefix(m.status, "resume failed:"))
 
 	statusBg := m.theme.BgColor(theme.Status)
 	statusStyle := m.theme.Style(theme.Status)
@@ -200,6 +222,17 @@ func (m Model) viewStatus(w int) string {
 	var renderedLeft string
 	st := m.statusText()
 	switch {
+	case m.mode == modeFilter:
+		filterPrompt := " Filter: "
+		cursorGlyph := "▌"
+		maxFilterLen := w - rightW - textutil.DisplayWidth(filterPrompt) - textutil.DisplayWidth(cursorGlyph)
+		dispFilter := m.filter
+		if maxFilterLen > 0 && textutil.DisplayWidth(dispFilter) > maxFilterLen {
+			dispFilter = tailByDisplayWidth(dispFilter, maxFilterLen)
+		} else if maxFilterLen <= 0 {
+			dispFilter = ""
+		}
+		renderedLeft = statusStyle.Render(filterPrompt + dispFilter + cursorGlyph)
 	case st != "":
 		cleanStatus := textutil.SingleLine(st)
 		if isError {
@@ -221,8 +254,6 @@ func (m Model) viewStatus(w int) string {
 			}
 			renderedLeft = statusStyle.Render(" " + textutil.Truncate(cleanStatus, maxStatusLen))
 		}
-	case m.mode == modeFilter:
-		renderedLeft = statusStyle.Render(" Filter: " + m.filter + "▌")
 	case len(m.marked) > 0:
 		renderedLeft = statusStyle.Render(fmt.Sprintf(" %d marked", len(m.marked)))
 	default:
