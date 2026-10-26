@@ -321,8 +321,12 @@ func (m Model) viewFooter(w int) string {
 		part2 := m.formatKeyBadge("ESC", footerBg)
 		part3 := footerStyle.Render(": clear  ")
 		part4 := m.formatKeyBadge("Enter", footerBg)
-		part5 := footerStyle.Render(": apply  (type to filter) ")
-		rendered := part1 + part2 + part3 + part4 + part5
+		part5 := footerStyle.Render(": apply  ")
+		part6 := m.formatKeyBadge("↑/↓", footerBg)
+		part7 := footerStyle.Render(": nav  ")
+		part8 := m.formatKeyBadge("Tab", footerBg)
+		part9 := footerStyle.Render(": info  (type to filter) ")
+		rendered := part1 + part2 + part3 + part4 + part5 + part6 + part7 + part8 + part9
 		currentWidth := lipgloss.Width(rendered)
 		if currentWidth < w {
 			rendered += footerStyle.Render(strings.Repeat(" ", w-currentWidth))

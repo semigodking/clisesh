@@ -67,6 +67,7 @@ type Model struct {
 	offset   int
 	marked   map[string]bool
 	mode     mode
+	prevMode mode
 	filter   string
 
 	width, height int

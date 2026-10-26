@@ -83,7 +83,7 @@ clisesh version               # Print version
 | `d` | Delete | Delete session (active `●` sessions are protected) |
 | `i` | Info | View session details (ID, age, CWD, provider) |
 | `e` | Error | View detailed error logs if summarization fails |
-| `/` | Filter | Search across titles, descriptions, and IDs (`esc` to cancel) |
+| `/` | Filter | Search across titles, descriptions, and IDs (`↑`/`↓` to navigate, `tab` for info, `esc` to clear) |
 | `q` / `ctrl+c` | Quit | Exit clisesh |
 
 ## Configuration

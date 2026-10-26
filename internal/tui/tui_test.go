@@ -91,6 +91,12 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeySpace}
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
@@ -306,6 +312,85 @@ func TestFilterModeNarrowTerminalAndTruncation(t *testing.T) {
 		if dw > w {
 			t.Errorf("viewStatus display width %d exceeds terminal width %d: %q", dw, w, plain)
 		}
+	}
+}
+
+func TestFilterModeNavigationAndInfo(t *testing.T) {
+	m, _ := newModel(allCaps())
+	// 3 sessions: aaaaaaaa-1, bbbbbbbb-2, cccccccc-3
+
+	// Enter filter mode
+	mm, _ := m.Update(key("/"))
+	m = mm.(Model)
+	if m.mode != modeFilter {
+		t.Fatal("/ should enter filter mode")
+	}
+
+	// Down moves cursor from 0 to 1
+	mm, _ = m.Update(key("down"))
+	m = mm.(Model)
+	if m.cursor != 1 {
+		t.Errorf("down in filter mode should move cursor to 1, got %d", m.cursor)
+	}
+	if s, ok := m.current(); !ok || s.ID != "bbbbbbbb-2" {
+		t.Errorf("cursor session should be bbbbbbbb-2, got %+v", s)
+	}
+
+	// Up moves cursor back to 0
+	mm, _ = m.Update(key("up"))
+	m = mm.(Model)
+	if m.cursor != 0 {
+		t.Errorf("up in filter mode should move cursor to 0, got %d", m.cursor)
+	}
+
+	// PgDown jumps to bottom (clamped to 2)
+	mm, _ = m.Update(key("pgdown"))
+	m = mm.(Model)
+	if m.cursor != 2 {
+		t.Errorf("pgdown in filter mode should clamp to last item (2), got %d", m.cursor)
+	}
+
+	// PgUp jumps back to 0
+	mm, _ = m.Update(key("pgup"))
+	m = mm.(Model)
+	if m.cursor != 0 {
+		t.Errorf("pgup in filter mode should clamp to 0, got %d", m.cursor)
+	}
+
+	// Type "beta" to filter
+	for _, ch := range []string{"b", "e", "t", "a"} {
+		mm, _ = m.Update(key(ch))
+		m = mm.(Model)
+	}
+	if m.filter != "beta" {
+		t.Fatalf("expected filter 'beta', got %q", m.filter)
+	}
+
+	// Tab opens info modal for current session
+	mm, _ = m.Update(key("tab"))
+	m = mm.(Model)
+	if m.mode != modeInfo {
+		t.Fatalf("tab in filter mode should open modeInfo, got mode %d", m.mode)
+	}
+	view := m.View()
+	if !strings.Contains(view, "bbbbbbbb-2") {
+		t.Errorf("info view should display session bbbbbbbb-2, got:\n%s", view)
+	}
+
+	// Closing info modal (via esc or any key) must restore modeFilter with filter intact
+	mm, _ = m.Update(key("esc"))
+	m = mm.(Model)
+	if m.mode != modeFilter {
+		t.Fatalf("closing info should return to modeFilter, got mode %d", m.mode)
+	}
+	if m.filter != "beta" {
+		t.Errorf("filter text should be preserved after closing info, got %q", m.filter)
+	}
+
+	// Check footer renders hint for navigation and info
+	footer := stripANSI(m.viewFooter(80))
+	if !strings.Contains(footer, "↑/↓: nav") || !strings.Contains(footer, "Tab: info") {
+		t.Errorf("footer should contain '↑/↓: nav' and 'Tab: info', got %q", footer)
 	}
 }
 

@@ -110,6 +110,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		if _, ok := m.current(); ok {
 			m.infoOffset = 0
+			m.prevMode = modeNormal
 			m.mode = modeInfo
 		}
 	case "e":
@@ -179,7 +180,12 @@ func (m Model) handleInfoKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Any other key (esc, q, enter, i, etc.) closes the info popup.
 		m.infoOffset = 0
-		m.mode = modeNormal
+		if m.prevMode == modeFilter {
+			m.mode = modeFilter
+		} else {
+			m.mode = modeNormal
+		}
+		m.prevMode = modeNormal
 	}
 	return m, nil
 }
@@ -225,6 +231,20 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.offset = 0
 	case "enter":
 		m.mode = modeNormal
+	case "up":
+		m.moveCursor(-1)
+	case "down":
+		m.moveCursor(1)
+	case "pgup":
+		m.moveCursor(-m.listHeight())
+	case "pgdown":
+		m.moveCursor(m.listHeight())
+	case "tab", "ctrl+i", "alt+i":
+		if _, ok := m.current(); ok {
+			m.infoOffset = 0
+			m.prevMode = modeFilter
+			m.mode = modeInfo
+		}
 	case "backspace":
 		if len(m.filter) > 0 {
 			r := []rune(m.filter)
