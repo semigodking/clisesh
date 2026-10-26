@@ -1,8 +1,10 @@
 // Package antigravity implements domain.SessionProvider for Google's
-// Antigravity CLI (agy), which stores one directory per conversation under
-// ~/.gemini/antigravity-cli/brain/<uuid>/ with the transcript at
-// <uuid>/.system_generated/logs/transcript.jsonl. There is no metadata file,
-// so titles/cwd are unavailable and timestamps come from the transcript mtime.
+// Antigravity CLI (agy), which stores conversation brains under
+// ~/.gemini/antigravity-cli/brain/<uuid>/ with transcripts at
+// <uuid>/.system_generated/logs/transcript.jsonl, and conversation SQLite
+// databases under ~/.gemini/antigravity-cli/conversations/<uuid>.db.
+// CWD is resolved from conversations/<uuid>.db, while prompts are read from
+// the transcript JSONL.
 package antigravity
 
 import (
@@ -24,7 +26,11 @@ import (
 
 const providerID = "antigravity"
 
-var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var (
+	uuidRe          = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	cwdRegex        = regexp.MustCompile(`(?:read_file|write_file)\((/[^)*?\x00-\x1f\r\n]+)\)`)
+	cwdFileUriRegex = regexp.MustCompile(`file://(/[^)*?\x00-\x1f\r\n"'` + "`" + ` ]+)`)
+)
 
 func init() {
 	provider.Register(providerID, func(baseDir string) (domain.SessionProvider, error) {
@@ -34,8 +40,9 @@ func init() {
 
 // Provider is the Antigravity session provider.
 type Provider struct {
-	dir         string // the brain/ directory
-	presenceDir string // the presence/ directory holding <id>.lock files
+	dir              string // the brain/ directory
+	presenceDir      string // the presence/ directory holding <id>.lock files
+	conversationsDir string // the conversations/ directory holding <id>.db files
 }
 
 // New returns an Antigravity provider. If baseDir is empty, the default
@@ -48,10 +55,13 @@ func New(baseDir string) *Provider {
 		}
 		baseDir = filepath.Join(home, ".gemini", "antigravity-cli", "brain")
 	}
-	presenceDir := filepath.Join(filepath.Dir(baseDir), "presence")
+	parent := filepath.Dir(baseDir)
+	presenceDir := filepath.Join(parent, "presence")
+	conversationsDir := filepath.Join(parent, "conversations")
 	return &Provider{
-		dir:         baseDir,
-		presenceDir: presenceDir,
+		dir:              baseDir,
+		presenceDir:      presenceDir,
+		conversationsDir: conversationsDir,
 	}
 }
 
@@ -101,47 +111,118 @@ func (p *Provider) isLocked(id string) bool {
 	return false
 }
 
-// List returns conversations newest-first (by transcript mtime).
-func (p *Provider) List(ctx context.Context) ([]domain.Session, error) {
-	entries, err := os.ReadDir(p.dir)
+// extractCWD extracts the workspace working directory from conversations/<id>.db.
+func (p *Provider) extractCWD(id string) string {
+	dbPath := filepath.Join(p.conversationsDir, id+".db")
+	f, err := os.Open(dbPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+		home, hErr := os.UserHomeDir()
+		if hErr == nil {
+			fallbackPath := filepath.Join(home, ".gemini", "antigravity-ide", "conversations", id+".db")
+			f, err = os.Open(fallbackPath)
 		}
+	}
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	buf := make([]byte, 2*1024*1024)
+	n, _ := f.Read(buf)
+	if n <= 0 {
+		return ""
+	}
+	data := buf[:n]
+
+	// 1. Try read_file(...) or write_file(...) permission pattern
+	if m := cwdRegex.FindSubmatch(data); len(m) > 1 {
+		path := strings.TrimSpace(string(m[1]))
+		if path != "" && path != "*" && filepath.IsAbs(path) {
+			return filepath.Clean(path)
+		}
+	}
+
+	// 2. Try file:///... URI pattern
+	if m := cwdFileUriRegex.FindSubmatch(data); len(m) > 1 {
+		path := strings.TrimSpace(string(m[1]))
+		if path != "" && filepath.IsAbs(path) {
+			return filepath.Clean(path)
+		}
+	}
+
+	return ""
+}
+
+// List returns conversations newest-first.
+func (p *Provider) List(ctx context.Context) ([]domain.Session, error) {
+	idSet := make(map[string]bool)
+
+	// Collect from brain/ directory
+	if entries, err := os.ReadDir(p.dir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && uuidRe.MatchString(e.Name()) {
+				idSet[e.Name()] = true
+			}
+		}
+	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
+
+	// Collect from conversations/ directory (<uuid>.db)
+	if entries, err := os.ReadDir(p.conversationsDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".db") {
+				id := strings.TrimSuffix(e.Name(), ".db")
+				if uuidRe.MatchString(id) {
+					idSet[id] = true
+				}
+			}
+		}
+	}
+
 	var sessions []domain.Session
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		id := e.Name()
-		if !uuidRe.MatchString(id) {
-			continue
-		}
-		updated := p.updatedAt(id, e)
+	for id := range idSet {
+		updated := p.updatedAt(id)
+		cwd := p.extractCWD(id)
 		sessions = append(sessions, domain.Session{
 			ID:         id,
 			ProviderID: providerID,
+			CWD:        cwd,
 			UpdatedAt:  updated,
 			Locked:     p.isLocked(id),
 		})
 	}
+
 	sort.SliceStable(sessions, func(i, j int) bool {
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 	})
 	return sessions, nil
 }
 
-// updatedAt returns the transcript mtime, falling back to the dir mtime.
-func (p *Provider) updatedAt(id string, dirEntry os.DirEntry) time.Time {
+// updatedAt returns the newest timestamp across transcript, brain dir, and db file.
+func (p *Provider) updatedAt(id string) time.Time {
+	var newest time.Time
+
+	// 1. transcript mtime
 	if fi, err := os.Stat(p.transcriptPath(id)); err == nil {
-		return fi.ModTime().UTC()
+		if fi.ModTime().After(newest) {
+			newest = fi.ModTime().UTC()
+		}
 	}
-	if info, err := dirEntry.Info(); err == nil {
-		return info.ModTime().UTC()
+	// 2. brain/<id> dir mtime
+	if fi, err := os.Stat(filepath.Join(p.dir, id)); err == nil {
+		if fi.ModTime().After(newest) {
+			newest = fi.ModTime().UTC()
+		}
 	}
-	return time.Time{}
+	// 3. conversations/<id>.db mtime
+	if fi, err := os.Stat(filepath.Join(p.conversationsDir, id+".db")); err == nil {
+		if fi.ModTime().After(newest) {
+			newest = fi.ModTime().UTC()
+		}
+	}
+
+	return newest
 }
 
 // transcriptEntry is a defensively-typed view of a transcript line.
@@ -277,7 +358,7 @@ func (p *Provider) Children(ctx context.Context, id string) ([]string, error) {
 	return nil, nil
 }
 
-// Delete removes conversation directories after strict id validation,
+// Delete removes conversation directories and database files after strict id validation,
 // and cleans up any lingering presence lock file.
 func (p *Provider) Delete(ctx context.Context, ids []string) ([]string, error) {
 	var deleted []string
@@ -286,12 +367,13 @@ func (p *Provider) Delete(ctx context.Context, ids []string) ([]string, error) {
 			continue // never risk deleting the brain root or escaping it
 		}
 		path := filepath.Join(p.dir, id)
-		if err := os.RemoveAll(path); err == nil {
-			deleted = append(deleted, id)
-			// Also clean up any lingering 0-byte presence lock file.
-			lockPath := filepath.Join(p.presenceDir, id+".lock")
-			_ = os.Remove(lockPath)
-		}
+		dbPath := filepath.Join(p.conversationsDir, id+".db")
+		lockPath := filepath.Join(p.presenceDir, id+".lock")
+
+		_ = os.RemoveAll(path)
+		_ = os.Remove(dbPath)
+		_ = os.Remove(lockPath)
+		deleted = append(deleted, id)
 	}
 	sort.Strings(deleted)
 	return deleted, nil

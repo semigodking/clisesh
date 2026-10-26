@@ -13,13 +13,16 @@ changing domain, tui, summarize, or cache.
 
 Base dir: `~/.gemini/antigravity-cli/brain/` (overridable via `New(baseDir)`).
 
-One directory per conversation, named with a UUID:
-```
-brain/<uuid>/.system_generated/logs/transcript.jsonl
-```
+Antigravity CLI uses a hybrid layout:
+1. **Brain directory**: `~/.gemini/antigravity-cli/brain/<uuid>/`
+   ```
+   brain/<uuid>/.system_generated/logs/transcript.jsonl
+   ```
+   Contains plaintext JSON Lines transcripts with `USER_INPUT` entries for prompt extraction.
+2. **Conversations database**: `~/.gemini/antigravity-cli/conversations/<uuid>.db`
+   SQLite database holding `executor_metadata` containing the session's workspace path (`CWD`).
 
-There is **no metadata file** — no stored title or cwd. Timestamps come from
-the transcript file's modification time.
+Timestamps come from the newest mtime across the transcript, brain directory, and database file.
 
 Transcript entries (one JSON object per line) include:
 - `USER_INPUT` — the user's messages.
@@ -31,7 +34,7 @@ Transcript entries (one JSON object per line) include:
 HasTitle:        false   // no title recorded
 HasParent:       false   // no subagent linkage
 CanResume:       true    // agy --conversation <id>
-CanDelete:       true    // remove the conversation directory
+CanDelete:       true    // remove conversation directory and db file
 CascadeDelete:   false
 ProvidesPrompts: true    // USER_INPUT entries
 ```
@@ -39,10 +42,11 @@ ProvidesPrompts: true    // USER_INPUT entries
 ## Behavior
 
 ### List
-- Read entries under `brain/`; each subdirectory named as a UUID is a session.
-- `UpdatedAt` = mtime of the transcript file (fallback: dir mtime).
+- Read entries under `brain/` and `conversations/` (`<uuid>.db`).
+- `UpdatedAt` = newest mtime among transcript file, brain dir, and database file.
+- `CWD` = extracted from `conversations/<uuid>.db` (via workspace permission pattern).
 - `Locked` = whether `presence/<id>.lock` is actively locked via flock by a running `agy` process.
-- `Title` and `CWD` are empty; the app relies on summarization.
+- `Title` is empty; the app relies on summarization.
 - Newest-first by `UpdatedAt`.
 
 ### UserPrompts(id, max)
@@ -57,6 +61,11 @@ ProvidesPrompts: true    // USER_INPUT entries
 
 ### ValidateResume(id)
 - Verify `agy` binary exists on system `PATH` via `exec.LookPath("agy")`.
+
+### Delete(ids)
+- Remove `brain/<id>/` directory.
+- Remove `conversations/<id>.db` file.
+- Remove lingering `presence/<id>.lock` file.
 
 ### Delete(ids)
 - For each id, validate strictly (non-empty, no `.`/`..`, no path separators,

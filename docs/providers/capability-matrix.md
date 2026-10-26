@@ -11,7 +11,7 @@ with shape/version checks.
 | Provider     | Base dir (env override)                     | Layout                                                        | Title? | Metadata source            |
 |--------------|---------------------------------------------|---------------------------------------------------------------|--------|----------------------------|
 | **Kiro**     | `~/.kiro/sessions/cli/`                      | `<uuid>.json` (meta) + `<uuid>.jsonl` (transcript) + `.lock`  | Yes    | `.json`: title, cwd, updated_at, parent_session_id |
-| **Antigravity** (`agy`) | `~/.gemini/antigravity-cli/brain/` | `<uuid>/.system_generated/logs/transcript.jsonl` (dir per convo) | No | transcript entries only    |
+| **Antigravity** (`agy`) | `~/.gemini/antigravity-cli/brain/` | `brain/<uuid>/` + `conversations/<uuid>.db`                   | No     | `transcript.jsonl` (prompts), `conversations/<uuid>.db` (cwd) |
 | **Claude Code** (`claude`) | `~/.claude/projects/` (`CLAUDE_CONFIG_DIR`) | `<encoded-cwd>/<uuid>.jsonl` + `~/.claude/sessions/`          | No     | `.jsonl` entries: user prompts, cwd |
 | **OpenAI Codex** (`codex`) | `~/.codex/sessions/` (`CODEX_HOME`)         | `YYYY/MM/DD/rollout-*.jsonl`                                  | No     | `.jsonl` entries: user prompts, cwd |
 | **OpenCode** (`opencode`) | `~/.local/share/opencode/` + `~/.config/opencode/` | Service HTTP API (`/api/session`) + SQLite `opencode.db` (`session_v2`/`session`) / CLI | Yes | API / DB: title, cwd, updated_at, parent_id |
@@ -32,7 +32,7 @@ Active lock detection:
 
 Resume / validate / delete:
 - **Kiro**: resume `kiro-cli chat --resume-id <id>`; validation checks `kiro-cli` binary on PATH; delete = remove session files & subagent cascade.
-- **Antigravity**: resume `agy --conversation <id>`; validation checks `agy` binary on PATH; delete = `rm -rf` the conversation directory.
+- **Antigravity**: resume `agy --conversation <id>`; validation checks `agy` binary on PATH; delete = remove conversation directory (`brain/<id>`), database (`conversations/<id>.db`), and lock file.
 - **Claude Code**: resume `claude --resume <id>`; validation checks `claude` binary on PATH; delete = remove `<project>/<uuid>.jsonl`.
 - **OpenAI Codex**: resume `codex resume <id>`; validation checks `codex` binary on PATH; delete = remove rollout file and prune empty parent date directories.
 - **OpenCode**: resume `opencode --session <id>`; validation checks `opencode` binary on PATH; delete = `opencode session delete <id>`. In TUI display, `ses_` prefix is stripped for readability.

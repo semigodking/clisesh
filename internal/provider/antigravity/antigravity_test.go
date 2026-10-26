@@ -118,6 +118,98 @@ func TestDeleteRemovesDir(t *testing.T) {
 	}
 }
 
+func TestExtractCWD(t *testing.T) {
+	p, _ := setup(t)
+	if err := os.MkdirAll(p.conversationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write fixture .db with binary content containing read_file(/home/ubuntu/my-project)
+	dbPath := filepath.Join(p.conversationsDir, idA+".db")
+	fixture := []byte("some\x00binary\x01data\x02read_file(/home/ubuntu/my-project)\x03more\x00data")
+	if err := os.WriteFile(dbPath, fixture, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := p.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundCWD string
+	for _, s := range sessions {
+		if s.ID == idA {
+			foundCWD = s.CWD
+		}
+	}
+	if foundCWD != "/home/ubuntu/my-project" {
+		t.Errorf("expected CWD '/home/ubuntu/my-project', got %q", foundCWD)
+	}
+}
+
+func TestDeleteRemovesBothBrainAndDB(t *testing.T) {
+	p, brain := setup(t)
+	if err := os.MkdirAll(p.conversationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(p.conversationsDir, idA+".db")
+	if err := os.WriteFile(dbPath, []byte("dummy db content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lockPath := filepath.Join(p.presenceDir, idA+".lock")
+	_ = os.MkdirAll(p.presenceDir, 0o755)
+	_ = os.WriteFile(lockPath, []byte(""), 0o644)
+
+	deleted, err := p.Delete(context.Background(), []string{idA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 1 || deleted[0] != idA {
+		t.Fatalf("unexpected deleted list: %v", deleted)
+	}
+
+	if _, err := os.Stat(filepath.Join(brain, idA)); !os.IsNotExist(err) {
+		t.Error("brain conversation dir should be removed")
+	}
+	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+		t.Error("conversations .db file should also be removed")
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Error("presence lock file should also be removed")
+	}
+}
+
+func TestListFromConversationsOnly(t *testing.T) {
+	p, _ := setup(t)
+	if err := os.MkdirAll(p.conversationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const idC = "88888888-4444-4444-4444-121212121212"
+	dbPath := filepath.Join(p.conversationsDir, idC+".db")
+	fixture := []byte("prefix\x00write_file(/home/user/only-in-db)\x00suffix")
+	if err := os.WriteFile(dbPath, fixture, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := p.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, s := range sessions {
+		if s.ID == idC {
+			found = true
+			if s.CWD != "/home/user/only-in-db" {
+				t.Errorf("expected CWD '/home/user/only-in-db', got %q", s.CWD)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("session %s from conversations dir should be listed", idC)
+	}
+}
+
 func TestDeleteRejectsUnsafeIDs(t *testing.T) {
 	p, brain := setup(t)
 	// Put a sentinel file at the brain root to ensure it's never removed.
